@@ -1,0 +1,783 @@
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Rally Draw</title>
+<style>
+/* ────────────────────────────────────────────────────────────
+   Layout concept: a vertical "scorecard" wizard — one tab strip
+   styled like a tournament scoreboard, one working panel below.
+   Generated matches render as stacked court cards, each row
+   reading left-to-right like a draw sheet pinned to a clipboard.
+   ──────────────────────────────────────────────────────────── */
+:root{
+  --bg:#F6F4EC;
+  --surface:#FFFFFF;
+  --surface-2:#EFEBDF;
+  --ink:#16261F;
+  --ink-soft:#54645C;
+  --court:#1F6F62;
+  --court-dark:#133E36;
+  --ball:#C9E24E;
+  --ball-ink:#2B3309;
+  --line:#DAD3C1;
+  --danger:#B5432F;
+  --radius:14px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0E1A17;
+    --surface:#15271F;
+    --surface-2:#1C322A;
+    --ink:#ECEEE3;
+    --ink-soft:#A6B8AF;
+    --court:#52B49C;
+    --court-dark:#2C5A4E;
+    --ball:#D7EE6C;
+    --ball-ink:#20280A;
+    --line:#2A3D34;
+    --danger:#E6826A;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0E1A17;
+  --surface:#15271F;
+  --surface-2:#1C322A;
+  --ink:#ECEEE3;
+  --ink-soft:#A6B8AF;
+  --court:#52B49C;
+  --court-dark:#2C5A4E;
+  --ball:#D7EE6C;
+  --ball-ink:#20280A;
+  --line:#2A3D34;
+  --danger:#E6826A;
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--bg);
+  color:var(--ink);
+  font-family:"Work Sans",system-ui,-apple-system,sans-serif;
+  padding-left:max(16px, env(safe-area-inset-left,0px));
+  padding-right:max(16px, env(safe-area-inset-right,0px));
+  padding-block:28px 60px;
+}
+h1,h2,h3{font-family:"Archivo",system-ui,sans-serif;font-weight:800;letter-spacing:-0.01em;text-wrap:balance;margin:0}
+.mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+.wrap{max-width:720px;margin:0 auto}
+
+/* header */
+.masthead{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:22px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:30px;height:30px;border-radius:50%;background:var(--ball);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.brand-mark svg{width:16px;height:16px}
+.brand h1{font-size:1.4rem;color:var(--ink)}
+.brand span{display:block;font-size:0.72rem;color:var(--ink-soft);font-weight:500;letter-spacing:0.04em;text-transform:uppercase;margin-top:1px}
+.theme-note{font-size:0.72rem;color:var(--ink-soft)}
+
+/* step strip */
+.steps{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:18px;scrollbar-width:none}
+.steps::-webkit-scrollbar{display:none}
+.step-btn{
+  flex:0 0 auto;display:flex;align-items:center;gap:7px;
+  padding:9px 13px;border-radius:999px;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink-soft);font-size:0.82rem;font-weight:600;
+  cursor:pointer;white-space:nowrap;transition:background .15s,color .15s,border-color .15s;
+}
+.step-btn .num{
+  width:18px;height:18px;border-radius:50%;background:var(--surface-2);color:var(--ink-soft);
+  display:flex;align-items:center;justify-content:center;font-size:0.68rem;font-family:"IBM Plex Mono",monospace;flex-shrink:0;
+}
+.step-btn.active{background:var(--court);border-color:var(--court);color:#fff}
+.step-btn.active .num{background:rgba(255,255,255,.22);color:#fff}
+.step-btn.done .num{background:var(--court);color:#fff}
+.step-btn:focus-visible{outline:2px solid var(--court);outline-offset:2px}
+
+/* card */
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:22px;margin-bottom:16px}
+.panel h2{font-size:1.15rem;margin-bottom:3px}
+.panel .sub{color:var(--ink-soft);font-size:0.85rem;margin-bottom:18px}
+
+/* form */
+.field{margin-bottom:15px}
+.field label{display:block;font-size:0.78rem;font-weight:600;color:var(--ink-soft);margin-bottom:6px;letter-spacing:0.01em}
+.field input[type=text],.field input[type=date],.field input[type=number],.field select{
+  width:100%;padding:10px 12px;border-radius:9px;border:1px solid var(--line);
+  background:var(--bg);color:var(--ink);font-size:0.92rem;font-family:inherit;
+}
+.field input:focus-visible,.field select:focus-visible{outline:2px solid var(--court);outline-offset:1px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:480px){.row2{grid-template-columns:1fr}}
+
+/* format picker */
+.fmt-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:480px){.fmt-grid{grid-template-columns:1fr}}
+.fmt-card{
+  border:1.5px solid var(--line);border-radius:11px;padding:13px;cursor:pointer;background:var(--bg);
+  text-align:left;color:var(--ink);transition:border-color .15s,background .15s;
+}
+.fmt-card strong{display:block;font-size:0.9rem;margin-bottom:3px;font-family:"Archivo",sans-serif;font-weight:700}
+.fmt-card span{font-size:0.78rem;color:var(--ink-soft);line-height:1.4}
+.fmt-card.active{border-color:var(--court);background:color-mix(in srgb, var(--court) 10%, var(--bg))}
+.fmt-card:focus-visible{outline:2px solid var(--court);outline-offset:2px}
+
+/* participant list */
+.add-row{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.add-row input,.add-row select{flex:1;min-width:120px}
+.btn{
+  border:none;border-radius:9px;padding:10px 16px;font-weight:700;font-size:0.86rem;cursor:pointer;
+  font-family:"Work Sans",sans-serif;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;
+}
+.btn-primary{background:var(--court);color:#fff}
+.btn-primary:hover{background:var(--court-dark)}
+.btn-ghost{background:var(--surface-2);color:var(--ink)}
+.btn-ghost:hover{background:var(--line)}
+.btn-ball{background:var(--ball);color:var(--ball-ink)}
+.btn:focus-visible{outline:2px solid var(--court);outline-offset:2px}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+
+.pair-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.pair-item{
+  display:flex;align-items:center;justify-content:space-between;gap:10px;
+  border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--bg);
+}
+.pair-item .names{font-weight:600;font-size:0.88rem}
+.pair-item .cat{font-size:0.72rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.03em;margin-top:2px}
+.pair-item button{background:none;border:none;color:var(--danger);cursor:pointer;font-size:0.78rem;font-weight:600;padding:4px 6px}
+.empty{color:var(--ink-soft);font-size:0.85rem;padding:18px 0;text-align:center}
+
+/* scoring */
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line)}
+.toggle-row:last-child{border-bottom:none}
+.toggle-row .t-label{font-size:0.88rem;font-weight:600}
+.toggle-row .t-desc{font-size:0.76rem;color:var(--ink-soft);margin-top:2px}
+.switch{position:relative;width:42px;height:24px;flex-shrink:0}
+.switch input{opacity:0;width:100%;height:100%;position:absolute;margin:0;cursor:pointer;z-index:1}
+.switch .track{position:absolute;inset:0;background:var(--line);border-radius:999px;transition:background .15s}
+.switch .thumb{position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--surface);box-shadow:0 1px 2px rgba(0,0,0,.2);transition:transform .15s}
+.switch input:checked ~ .track{background:var(--court)}
+.switch input:checked ~ .thumb{transform:translateX(18px)}
+
+/* schedule output */
+.sched-meta{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:18px;font-size:0.8rem;color:var(--ink-soft)}
+.sched-meta b{color:var(--ink);font-family:"IBM Plex Mono",monospace}
+.round-block{margin-bottom:20px}
+.round-title{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.round-title .chip{background:var(--court);color:#fff;font-family:"IBM Plex Mono",monospace;font-size:0.72rem;padding:3px 9px;border-radius:999px;font-weight:600}
+.round-title h3{font-size:0.98rem}
+.match-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:9px}
+.match-card{border:1px solid var(--line);border-radius:10px;padding:11px 12px;background:var(--bg)}
+.match-card .court-tag{font-size:0.68rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:7px;display:flex;align-items:center;gap:5px}
+.match-card .court-tag::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--ball)}
+.vs-line{display:flex;align-items:center;gap:8px;font-size:0.85rem;font-weight:600}
+.vs-line .vs{font-family:"IBM Plex Mono",monospace;color:var(--ink-soft);font-size:0.7rem;font-weight:500}
+.bye-card{border-style:dashed;color:var(--ink-soft);font-size:0.8rem;display:flex;align-items:center;justify-content:center}
+
+.note-box{background:var(--surface-2);border-radius:10px;padding:12px 14px;font-size:0.82rem;color:var(--ink-soft);line-height:1.5;margin-bottom:16px}
+.note-box b{color:var(--ink)}
+
+/* nav */
+.nav-row{display:flex;justify-content:space-between;gap:10px;margin-top:4px}
+.sample-tag{display:inline-block;background:var(--ball);color:var(--ball-ink);font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:middle}
+footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px}
+</style>
+
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+
+<div class="wrap">
+  <div class="masthead">
+    <div class="brand">
+      <div class="brand-mark">
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="9" stroke="#2B3309" stroke-width="2"/><path d="M4 9c4 2 12 2 16 0M4 15c4-2 12-2 16 0" stroke="#2B3309" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </div>
+      <div>
+        <h1>Rally Draw</h1>
+        <span>Penyusun turnamen padel</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="steps" id="steps" role="tablist" aria-label="Langkah penyusunan turnamen"></div>
+  <div id="panel-host"></div>
+
+  <footer>Dibuat dengan Rally Draw &middot; data tersimpan hanya di perangkat ini</footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  var STEPS = [
+    {id:"info", label:"Info"},
+    {id:"format", label:"Format"},
+    {id:"peserta", label:"Peserta"},
+    {id:"skor", label:"Skor"},
+    {id:"jadwal", label:"Jadwal"}
+  ];
+
+  var FORMATS = {
+    round_robin:{
+      name:"Round Robin",
+      desc:"Semua pasangan saling bertanding satu kali. Cocok untuk peserta sedikit dan ingin jam main merata."
+    },
+    knockout:{
+      name:"Gugur Langsung",
+      desc:"Kalah satu kali langsung tersingkir. Bagan menyusut tiap babak hingga tersisa satu juara."
+    },
+    groups_knockout:{
+      name:"Grup + Gugur",
+      desc:"Peserta dibagi grup kecil untuk round robin, lalu grup teratas lanjut ke babak gugur."
+    },
+    mexicano:{
+      name:"Mexicano",
+      desc:"Format dinamis khas padel: pasangan diacak ulang tiap babak berdasarkan perolehan poin."
+    }
+  };
+
+  var state = {
+    step: 0,
+    info: {
+      name: "Turnamen Komunitas Minggu Pagi",
+      date: nextSunday(),
+      location: "GOR Rawa Padel, Jakarta Selatan",
+      courts: 3
+    },
+    format: "round_robin",
+    nameInput: "",
+    catInput: "Terbuka",
+    participants: [
+      {id:1, p1:"Dimas", p2:"Reza", cat:"Terbuka"},
+      {id:2, p1:"Nadia", p2:"Citra", cat:"Terbuka"},
+      {id:3, p1:"Bagus", p2:"Fajar", cat:"Terbuka"},
+      {id:4, p1:"Wulan", p2:"Intan", cat:"Terbuka"},
+      {id:5, p1:"Yoga", p2:"Arka", cat:"Pemula"},
+      {id:6, p1:"Lani", p2:"Sari", cat:"Pemula"}
+    ],
+    nextId: 7,
+    scoring: {
+      bestOf: 3,
+      gamesPerSet: 6,
+      goldenPoint: true,
+      superTiebreak: false
+    },
+    schedule: null,
+    isSample: true
+  };
+
+  function nextSunday(){
+    var d = new Date();
+    var day = d.getDay();
+    var add = (7 - day) % 7 || 7;
+    d.setDate(d.getDate() + add);
+    return d.toISOString().slice(0,10);
+  }
+
+  function el(tag, attrs, children){
+    var node = document.createElement(tag);
+    attrs = attrs || {};
+    for (var k in attrs){
+      if (k === "class") node.className = attrs[k];
+      else if (k === "html") node.innerHTML = attrs[k];
+      else if (k.indexOf("on") === 0 && typeof attrs[k] === "function") node.addEventListener(k.slice(2), attrs[k]);
+      else node.setAttribute(k, attrs[k]);
+    }
+    (children || []).forEach(function(c){
+      if (c == null) return;
+      node.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+    });
+    return node;
+  }
+
+  function fmtDate(iso){
+    if (!iso) return "-";
+    var d = new Date(iso + "T00:00:00");
+    if (isNaN(d)) return iso;
+    return d.toLocaleDateString("id-ID", {weekday:"long", day:"numeric", month:"long", year:"numeric"});
+  }
+
+  // ---------- rendering ----------
+
+  function renderSteps(){
+    var host = document.getElementById("steps");
+    host.innerHTML = "";
+    STEPS.forEach(function(s, i){
+      var cls = "step-btn";
+      if (i === state.step) cls += " active";
+      else if (i < state.step) cls += " done";
+      var btn = el("button", {
+        class: cls, type:"button", role:"tab",
+        "aria-selected": i === state.step ? "true" : "false",
+        onclick: function(){ goStep(i); }
+      }, [
+        el("span", {class:"num"}, [String(i+1)]),
+        s.label
+      ]);
+      host.appendChild(btn);
+    });
+  }
+
+  function goStep(i){
+    state.step = i;
+    renderAll();
+  }
+
+  function renderAll(){
+    renderSteps();
+    var host = document.getElementById("panel-host");
+    host.innerHTML = "";
+    var id = STEPS[state.step].id;
+    if (id === "info") host.appendChild(panelInfo());
+    if (id === "format") host.appendChild(panelFormat());
+    if (id === "peserta") host.appendChild(panelPeserta());
+    if (id === "skor") host.appendChild(panelSkor());
+    if (id === "jadwal") host.appendChild(panelJadwal());
+  }
+
+  function navRow(prevLabel, nextLabel, onNext){
+    var row = el("div", {class:"nav-row"});
+    var prevBtn = el("button", {
+      class:"btn btn-ghost", type:"button",
+      onclick: function(){ if (state.step > 0){ state.step--; renderAll(); } }
+    }, [prevLabel || "Kembali"]);
+    if (state.step === 0) prevBtn.disabled = true;
+    var nextBtn = el("button", {
+      class:"btn btn-primary", type:"button",
+      onclick: function(){
+        if (onNext) onNext();
+        if (state.step < STEPS.length - 1){ state.step++; renderAll(); }
+      }
+    }, [nextLabel || "Lanjut"]);
+    row.appendChild(prevBtn);
+    row.appendChild(nextBtn);
+    return row;
+  }
+
+  // ---------- step 1: info ----------
+
+  function panelInfo(){
+    var p = el("div", {class:"panel"});
+    p.appendChild(el("h2", {}, ["Info turnamen"]));
+    p.appendChild(el("div", {class:"sub"}, ["Nama acara, tanggal, dan jumlah lapangan yang tersedia."]));
+
+    var fName = field("Nama turnamen", "text", state.info.name, function(v){ state.info.name = v; });
+    p.appendChild(fName);
+
+    var row = el("div", {class:"row2"});
+    row.appendChild(field("Tanggal", "date", state.info.date, function(v){ state.info.date = v; }));
+    row.appendChild(field("Jumlah lapangan", "number", state.info.courts, function(v){ state.info.courts = Math.max(1, parseInt(v,10) || 1); }, {min:1, max:20}));
+    p.appendChild(row);
+
+    p.appendChild(field("Lokasi", "text", state.info.location, function(v){ state.info.location = v; }));
+
+    p.appendChild(navRow("Kembali", "Lanjut ke Format"));
+    return p;
+  }
+
+  function field(label, type, value, onChange, extraAttrs){
+    var wrap = el("div", {class:"field"});
+    wrap.appendChild(el("label", {}, [label]));
+    var attrs = Object.assign({type:type, value:value}, extraAttrs || {});
+    var input = el("input", attrs, []);
+    input.addEventListener("input", function(){ onChange(input.value); });
+    wrap.appendChild(input);
+    return wrap;
+  }
+
+  // ---------- step 2: format ----------
+
+  function panelFormat(){
+    var p = el("div", {class:"panel"});
+    p.appendChild(el("h2", {}, ["Format turnamen"]));
+    p.appendChild(el("div", {class:"sub"}, ["Pilih cara pasangan bertanding. Ini menentukan bagaimana jadwal dibuat."]));
+
+    var grid = el("div", {class:"fmt-grid"});
+    Object.keys(FORMATS).forEach(function(key){
+      var f = FORMATS[key];
+      var cls = "fmt-card" + (state.format === key ? " active" : "");
+      var card = el("button", {
+        class: cls, type:"button",
+        onclick: function(){ state.format = key; renderAll(); }
+      }, [
+        el("strong", {}, [f.name]),
+        el("span", {}, [f.desc])
+      ]);
+      grid.appendChild(card);
+    });
+    p.appendChild(grid);
+
+    p.appendChild(navRow("Kembali", "Lanjut ke Peserta"));
+    return p;
+  }
+
+  // ---------- step 3: peserta ----------
+
+  function panelPeserta(){
+    var p = el("div", {class:"panel"});
+    var h = el("h2", {}, ["Daftar peserta"]);
+    if (state.isSample) h.appendChild(el("span", {class:"sample-tag"}, ["Contoh data"]));
+    p.appendChild(h);
+    p.appendChild(el("div", {class:"sub"}, ["Pasangan ganda (dua nama per tim) beserta kategorinya."]));
+
+    var addRow = el("div", {class:"add-row"});
+    var p1 = el("input", {type:"text", placeholder:"Nama pemain 1"});
+    var p2 = el("input", {type:"text", placeholder:"Nama pemain 2"});
+    var cat = el("select", {}, [
+      el("option", {value:"Terbuka"}, ["Terbuka"]),
+      el("option", {value:"Pemula"}, ["Pemula"]),
+      el("option", {value:"Menengah"}, ["Menengah"]),
+      el("option", {value:"Lanjutan"}, ["Lanjutan"])
+    ]);
+    var addBtn = el("button", {class:"btn btn-primary", type:"button", onclick:function(){
+      var n1 = p1.value.trim(), n2 = p2.value.trim();
+      if (!n1 || !n2) return;
+      state.participants.push({id: state.nextId++, p1:n1, p2:n2, cat: cat.value});
+      state.isSample = false;
+      renderAll();
+      var focusInput = document.querySelector(".add-row input");
+      if (focusInput) focusInput.focus();
+    }}, ["+ Tambah"]);
+    addRow.appendChild(p1); addRow.appendChild(p2); addRow.appendChild(cat); addRow.appendChild(addBtn);
+    p.appendChild(addRow);
+
+    var list = el("ul", {class:"pair-list"});
+    if (state.participants.length === 0){
+      list.appendChild(el("li", {class:"empty"}, ["Belum ada pasangan terdaftar."]));
+    } else {
+      state.participants.forEach(function(pt){
+        var item = el("li", {class:"pair-item"}, [
+          el("div", {}, [
+            el("div", {class:"names"}, [pt.p1 + " / " + pt.p2]),
+            el("div", {class:"cat"}, [pt.cat])
+          ]),
+          el("button", {type:"button", onclick:function(){
+            state.participants = state.participants.filter(function(x){ return x.id !== pt.id; });
+            renderAll();
+          }}, ["Hapus"])
+        ]);
+        list.appendChild(item);
+      });
+    }
+    p.appendChild(list);
+
+    if (state.isSample){
+      p.appendChild(el("div", {class:"note-box", style:"margin-top:14px"}, [
+        el("b", {}, ["Ini data contoh. "]), "Tambahkan peserta asli, atau hapus semua dan mulai dari daftar kosong."
+      ]));
+    }
+
+    p.appendChild(navRow("Kembali", "Lanjut ke Skor"));
+    return p;
+  }
+
+  // ---------- step 4: skor ----------
+
+  function panelSkor(){
+    var p = el("div", {class:"panel"});
+    p.appendChild(el("h2", {}, ["Pengaturan skor"]));
+    p.appendChild(el("div", {class:"sub"}, ["Aturan permainan yang dipakai di setiap pertandingan."]));
+
+    var row = el("div", {class:"row2"});
+    var fBo = el("div", {class:"field"});
+    fBo.appendChild(el("label", {}, ["Format set"]));
+    var selBo = el("select", {}, [
+      el("option", {value:"1"}, ["Satu set langsung"]),
+      el("option", {value:"3"}, ["Best of 3 set"])
+    ]);
+    selBo.value = String(state.scoring.bestOf);
+    selBo.addEventListener("change", function(){ state.scoring.bestOf = parseInt(selBo.value,10); });
+    fBo.appendChild(selBo);
+    row.appendChild(fBo);
+
+    var fGames = el("div", {class:"field"});
+    fGames.appendChild(el("label", {}, ["Game per set"]));
+    var selG = el("select", {}, [
+      el("option", {value:"4"}, ["4 game"]),
+      el("option", {value:"6"}, ["6 game"])
+    ]);
+    selG.value = String(state.scoring.gamesPerSet);
+    selG.addEventListener("change", function(){ state.scoring.gamesPerSet = parseInt(selG.value,10); });
+    fGames.appendChild(selG);
+    row.appendChild(fGames);
+    p.appendChild(row);
+
+    p.appendChild(toggleRow("Golden point", "Deuce langsung ditentukan satu poin, tanpa keuntungan.", state.scoring.goldenPoint, function(v){ state.scoring.goldenPoint = v; }));
+    p.appendChild(toggleRow("Super tiebreak set penentu", "Set ketiga diganti tiebreak sampai 10 poin.", state.scoring.superTiebreak, function(v){ state.scoring.superTiebreak = v; }));
+
+    p.appendChild(navRow("Kembali", "Buat Jadwal", function(){ state.schedule = buildSchedule(); }));
+    return p;
+  }
+
+  function toggleRow(label, desc, value, onChange){
+    var row = el("div", {class:"toggle-row"});
+    row.appendChild(el("div", {}, [
+      el("div", {class:"t-label"}, [label]),
+      el("div", {class:"t-desc"}, [desc])
+    ]));
+    var sw = el("label", {class:"switch"});
+    var input = el("input", {type:"checkbox"});
+    input.checked = !!value;
+    input.addEventListener("change", function(){ onChange(input.checked); });
+    sw.appendChild(input);
+    sw.appendChild(el("span", {class:"track"}));
+    sw.appendChild(el("span", {class:"thumb"}));
+    row.appendChild(sw);
+    return row;
+  }
+
+  // ---------- scheduling engine ----------
+
+  function teamLabel(t){ return t.p1 + "/" + t.p2; }
+
+  // Round-robin via circle method, teams assigned to courts cyclically per round.
+  function roundRobinRounds(teams){
+    var list = teams.slice();
+    var bye = null;
+    if (list.length % 2 === 1){ bye = {id:"bye", p1:"—", p2:"", cat:""}; list.push(bye); }
+    var n = list.length;
+    var rounds = [];
+    var arr = list.slice();
+    for (var r = 0; r < n - 1; r++){
+      var pairs = [];
+      for (var i = 0; i < n/2; i++){
+        var a = arr[i], b = arr[n-1-i];
+        pairs.push([a,b]);
+      }
+      rounds.push(pairs);
+      // rotate, keep first fixed
+      var fixed = arr[0];
+      var rest = arr.slice(1);
+      rest.unshift(rest.pop());
+      arr = [fixed].concat(rest);
+    }
+    return rounds;
+  }
+
+  function assignCourts(pairs, courts){
+    // returns array of {court, a, b} dropping/flagging byes, cycling courts, queuing overflow into session groups
+    var real = pairs.filter(function(pr){ return pr[0].id !== "bye" && pr[1].id !== "bye"; });
+    var byeTeam = null;
+    pairs.forEach(function(pr){
+      if (pr[0].id === "bye") byeTeam = pr[1];
+      if (pr[1].id === "bye") byeTeam = pr[0];
+    });
+    var sessions = [];
+    for (var i = 0; i < real.length; i += courts){
+      var chunk = real.slice(i, i + courts).map(function(pr, idx){
+        return {court: idx+1, a: pr[0], b: pr[1]};
+      });
+      sessions.push(chunk);
+    }
+    if (sessions.length === 0) sessions.push([]);
+    return {sessions: sessions, bye: byeTeam};
+  }
+
+  function buildKnockout(teams){
+    var list = teams.slice();
+    // simple shuffle-free seed order as entered
+    var size = 1;
+    while (size < list.length) size *= 2;
+    while (list.length < size) list.push({id:"bye", p1:"BYE", p2:"", cat:""});
+    var rounds = [];
+    var roundNames = function(remaining){
+      if (remaining === 2) return "Final";
+      if (remaining === 4) return "Semifinal";
+      if (remaining === 8) return "Perempat Final";
+      return "Babak " + Math.round(size/remaining);
+    };
+    var current = list;
+    while (current.length >= 2){
+      var pairs = [];
+      for (var i = 0; i < current.length; i += 2){
+        pairs.push([current[i], current[i+1]]);
+      }
+      rounds.push({name: roundNames(current.length), pairs: pairs});
+      current = pairs.map(function(){ return {id:"tbd", p1:"Pemenang", p2:"", cat:""}; });
+    }
+    return rounds;
+  }
+
+  function buildGroups(teams, groupSize){
+    var groups = [];
+    var list = teams.slice();
+    var count = Math.max(1, Math.ceil(list.length / groupSize));
+    for (var i = 0; i < count; i++) groups.push([]);
+    list.forEach(function(t, idx){ groups[idx % count].push(t); });
+    return groups;
+  }
+
+  function buildSchedule(){
+    var teams = state.participants.slice();
+    var courts = state.info.courts;
+    if (teams.length < 2) return {error:"need2"};
+
+    if (state.format === "round_robin"){
+      var rounds = roundRobinRounds(teams);
+      return {
+        type:"round_robin",
+        rounds: rounds.map(function(pairs, i){
+          var out = assignCourts(pairs, courts);
+          return {label:"Babak " + (i+1), sessions: out.sessions, bye: out.bye};
+        })
+      };
+    }
+
+    if (state.format === "knockout"){
+      var kr = buildKnockout(teams);
+      return {type:"knockout", rounds: kr};
+    }
+
+    if (state.format === "groups_knockout"){
+      var groups = buildGroups(teams, 4);
+      var groupData = groups.map(function(g, gi){
+        var rounds2 = roundRobinRounds(g);
+        return {
+          name: "Grup " + String.fromCharCode(65+gi),
+          teams: g,
+          rounds: rounds2.map(function(pairs, i){
+            var out = assignCourts(pairs, courts);
+            return {label:"Babak " + (i+1), sessions: out.sessions, bye: out.bye};
+          })
+        };
+      });
+      return {type:"groups_knockout", groups: groupData};
+    }
+
+    if (state.format === "mexicano"){
+      // round 1 only: pair by entry order, rest depends on live scores
+      var shuffled = teams.slice();
+      var pairs1 = [];
+      for (var i = 0; i < shuffled.length - 1; i += 2) pairs1.push([shuffled[i], shuffled[i+1]]);
+      var byeM = shuffled.length % 2 === 1 ? shuffled[shuffled.length-1] : null;
+      var out1 = assignCourts(byeM ? pairs1.concat([[shuffled[shuffled.length-1], {id:"bye",p1:"—",p2:""}]]) : pairs1, courts);
+      return {type:"mexicano", firstRound: out1};
+    }
+
+    return {error:"unknown"};
+  }
+
+  // ---------- step 5: jadwal ----------
+
+  function panelJadwal(){
+    var p = el("div", {class:"panel"});
+    p.appendChild(el("h2", {}, ["Jadwal & bagan"]));
+    p.appendChild(el("div", {class:"sub"}, ["Hasil penyusunan berdasarkan format dan peserta yang dipilih."]));
+
+    if (!state.schedule) state.schedule = buildSchedule();
+    var s = state.schedule;
+
+    if (s.error === "need2"){
+      p.appendChild(el("div", {class:"empty"}, ["Tambahkan minimal 2 pasangan di tahap Peserta untuk membuat jadwal."]));
+      p.appendChild(navRow("Kembali ke Skor", "Mulai Baru", function(){ resetAll(); }));
+      return p;
+    }
+
+    var meta = el("div", {class:"sched-meta"}, [
+      el("span", {}, [state.info.name]),
+      el("span", {}, ["📍 ", state.info.location]),
+      el("span", {}, ["🗓 ", fmtDate(state.info.date)]),
+      el("span", {}, ["Lapangan: ", el("b", {}, [String(state.info.courts)])]),
+      el("span", {}, ["Format: ", el("b", {}, [FORMATS[state.format].name]) ])
+    ]);
+    p.appendChild(meta);
+
+    if (s.type === "round_robin"){
+      s.rounds.forEach(function(round){
+        p.appendChild(roundBlock(round.label, round.sessions, round.bye));
+      });
+    }
+
+    if (s.type === "knockout"){
+      s.rounds.forEach(function(round){
+        var block = el("div", {class:"round-block"});
+        block.appendChild(el("div", {class:"round-title"}, [
+          el("span", {class:"chip"}, [round.name]),
+        ]));
+        var grid = el("div", {class:"match-grid"});
+        round.pairs.forEach(function(pr){
+          grid.appendChild(matchCard(1, pr[0], pr[1]));
+        });
+        block.appendChild(grid);
+        p.appendChild(block);
+      });
+    }
+
+    if (s.type === "groups_knockout"){
+      s.groups.forEach(function(g){
+        var h = el("h3", {style:"margin:18px 0 8px"}, [g.name, " ", el("span", {class:"mono", style:"color:var(--ink-soft);font-size:0.78rem;font-weight:500"}, ["(" + g.teams.length + " tim)"])]);
+        p.appendChild(h);
+        g.rounds.forEach(function(round){
+          p.appendChild(roundBlock(round.label, round.sessions, round.bye));
+        });
+      });
+      p.appendChild(el("div", {class:"note-box"}, [
+        el("b", {}, ["Fase gugur: "]), "susun manual setelah fase grup selesai, berdasarkan peringkat tiap grup."
+      ]));
+    }
+
+    if (s.type === "mexicano"){
+      p.appendChild(el("div", {class:"note-box"}, [
+        el("b", {}, ["Format Mexicano bersifat dinamis. "]),
+        "Babak pertama ditentukan dari urutan daftar; babak berikutnya disusun ulang di lapangan berdasarkan jumlah poin tiap pemain setelah babak sebelumnya selesai."
+      ]));
+      p.appendChild(roundBlock("Babak 1", s.firstRound.sessions, s.firstRound.bye));
+    }
+
+    var actions = el("div", {class:"nav-row"});
+    var backBtn = el("button", {class:"btn btn-ghost", type:"button", onclick:function(){ state.step = 3; renderAll(); }}, ["Kembali"]);
+    var regenBtn = el("button", {class:"btn btn-ball", type:"button", onclick:function(){ state.schedule = buildSchedule(); renderAll(); }}, ["Susun Ulang"]);
+    var resetBtn = el("button", {class:"btn btn-primary", type:"button", onclick:resetAll}, ["Turnamen Baru"]);
+    actions.appendChild(backBtn);
+    var rightWrap = el("div", {style:"display:flex;gap:10px"}, [regenBtn, resetBtn]);
+    actions.appendChild(rightWrap);
+    p.appendChild(actions);
+
+    return p;
+  }
+
+  function roundBlock(label, sessions, bye){
+    var block = el("div", {class:"round-block"});
+    block.appendChild(el("div", {class:"round-title"}, [
+      el("span", {class:"chip"}, [label])
+    ]));
+    sessions.forEach(function(session, si){
+      if (sessions.length > 1){
+        block.appendChild(el("div", {style:"font-size:0.72rem;color:var(--ink-soft);margin:6px 0 6px;font-weight:600"}, ["Sesi " + (si+1)]));
+      }
+      var grid = el("div", {class:"match-grid"});
+      session.forEach(function(m){
+        grid.appendChild(matchCard(m.court, m.a, m.b));
+      });
+      block.appendChild(grid);
+    });
+    if (bye){
+      block.appendChild(el("div", {class:"match-card bye-card", style:"margin-top:8px;max-width:260px"}, [teamLabel(bye) + " — bye babak ini"]));
+    }
+    return block;
+  }
+
+  function matchCard(court, a, b){
+    return el("div", {class:"match-card"}, [
+      el("div", {class:"court-tag"}, ["Lapangan " + court]),
+      el("div", {class:"vs-line"}, [
+        el("span", {}, [teamLabel(a)]),
+        el("span", {class:"vs"}, ["VS"]),
+        el("span", {}, [teamLabel(b)])
+      ])
+    ]);
+  }
+
+  function resetAll(){
+    state.step = 0;
+    state.info = {name:"", date:"", location:"", courts: 2};
+    state.format = "round_robin";
+    state.participants = [];
+    state.nextId = 1;
+    state.scoring = {bestOf:3, gamesPerSet:6, goldenPoint:true, superTiebreak:false};
+    state.schedule = null;
+    state.isSample = false;
+    renderAll();
+  }
+
+  renderAll();
+})();
+</script>
