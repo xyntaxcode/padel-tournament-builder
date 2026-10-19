@@ -75,6 +75,19 @@ h1,h2,h3{font-family:"Archivo",system-ui,sans-serif;font-weight:800;letter-spaci
 .brand span{display:block;font-size:0.72rem;color:var(--ink-soft);font-weight:500;letter-spacing:0.04em;text-transform:uppercase;margin-top:1px}
 .theme-note{font-size:0.72rem;color:var(--ink-soft)}
 
+/* cloud / share status */
+.cloud-badge{display:inline-flex;align-items:center;gap:5px;font-size:0.7rem;font-weight:700;padding:4px 9px;border-radius:999px;text-transform:uppercase;letter-spacing:0.03em}
+.cloud-badge.online{background:color-mix(in srgb, var(--court) 20%, var(--surface-2));color:var(--court)}
+.cloud-badge.offline{background:var(--surface-2);color:var(--ink-soft)}
+.cloud-badge .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+.share-box{background:var(--surface-2);border-radius:12px;padding:14px 16px;margin-bottom:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.share-box .link-field{flex:1;min-width:160px;background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-family:"IBM Plex Mono",monospace;font-size:0.78rem;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.share-box .label{font-size:0.78rem;color:var(--ink-soft);flex:0 0 100%}
+.publish-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.publish-row .status-text{font-size:0.78rem;color:var(--ink-soft)}
+.spinner{width:14px;height:14px;border-radius:50%;border:2px solid currentColor;border-right-color:transparent;display:inline-block;animation:spin .7s linear infinite;vertical-align:-2px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
 /* step strip */
 .steps{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:18px;scrollbar-width:none}
 .steps::-webkit-scrollbar{display:none}
@@ -220,6 +233,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
 </style>
 
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 
 <div class="wrap">
   <div class="masthead">
@@ -232,6 +246,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
         <span>Penyusun turnamen padel</span>
       </div>
     </div>
+    <div id="cloud-status"></div>
   </div>
 
   <div class="steps" id="steps" role="tablist" aria-label="Langkah penyusunan turnamen"></div>
@@ -300,8 +315,17 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     },
     schedule: null,
     isSample: true,
-    scores: {}
+    scores: {},
+    cloud: null,
+    publishStatus: "idle",
+    publishError: ""
   };
+
+  var SUPABASE_URL = "https://hxzazdpknudfbwicjdol.supabase.co";
+  var SUPABASE_ANON_KEY = "sb_publishable_z1AjIxD7cTT0bb6lgXRtLA_OBlImc4m";
+  var sb = (window.supabase && window.supabase.createClient)
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    : null;
 
   function nextSunday(){
     var d = new Date();
@@ -360,10 +384,33 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     renderAll();
   }
 
+  function renderCloudBadge(){
+    var host = document.getElementById("cloud-status");
+    if (!host) return;
+    host.innerHTML = "";
+    if (state.cloud && state.cloud.tournamentId){
+      host.appendChild(el("span", {class:"cloud-badge online"}, [el("span", {class:"dot"}), "Online · tersimpan"]));
+    } else {
+      host.appendChild(el("span", {class:"cloud-badge offline"}, [el("span", {class:"dot"}), "Draf lokal"]));
+    }
+  }
+
   function renderAll(){
     renderSteps();
+    renderCloudBadge();
     var host = document.getElementById("panel-host");
     host.innerHTML = "";
+
+    if (state.publishStatus === "loading"){
+      var loadingPanel = el("div", {class:"panel"}, [
+        el("div", {style:"display:flex;align-items:center;gap:10px;color:var(--ink-soft);font-size:0.9rem"}, [
+          el("span", {class:"spinner"}), "Memuat turnamen dari server…"
+        ])
+      ]);
+      host.appendChild(loadingPanel);
+      return;
+    }
+
     var id = STEPS[state.step].id;
     if (id === "info") host.appendChild(panelInfo());
     if (id === "format") host.appendChild(panelFormat());
@@ -773,16 +820,58 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
       p.appendChild(roundBlock("Babak 1", s.firstRound.sessions, s.firstRound.bye));
     }
 
+    p.appendChild(publishSection());
+
     var actions = el("div", {class:"nav-row"});
     var backBtn = el("button", {class:"btn btn-ghost", type:"button", onclick:function(){ state.step = 3; renderAll(); }}, ["Kembali"]);
-    var regenBtn = el("button", {class:"btn btn-ball", type:"button", onclick:function(){ state.schedule = buildSchedule(); renderAll(); }}, ["Susun Ulang"]);
+    var regenBtn = el("button", {class:"btn btn-ball", type:"button", onclick:function(){
+      state.schedule = buildSchedule();
+      state.cloud = null;
+      try { history.replaceState(null, "", location.pathname); } catch(e){}
+      renderAll();
+    }}, ["Susun Ulang"]);
     var resetBtn = el("button", {class:"btn btn-primary", type:"button", onclick:resetAll}, ["Turnamen Baru"]);
     actions.appendChild(backBtn);
-    var rightWrap = el("div", {style:"display:flex;gap:10px"}, [regenBtn, resetBtn]);
+    var rightWrap = el("div", {style:"display:flex;gap:10px;flex-wrap:wrap"}, [regenBtn, resetBtn]);
     actions.appendChild(rightWrap);
     p.appendChild(actions);
 
     return p;
+  }
+
+  function publishSection(){
+    var wrap = el("div", {});
+    if (state.cloud && state.cloud.tournamentId){
+      var url = location.origin + location.pathname + "#t=" + state.cloud.tournamentId;
+      var box = el("div", {class:"share-box"});
+      box.appendChild(el("div", {class:"label"}, ["Tersimpan online — bagikan tautan ini ke peserta atau panitia lain:"]));
+      box.appendChild(el("div", {class:"link-field"}, [url]));
+      box.appendChild(el("button", {class:"btn btn-ball", type:"button", onclick:function(){
+        copyShareLink();
+        this.textContent = "Tersalin!";
+        var btn = this;
+        setTimeout(function(){ btn.textContent = "Salin Tautan"; }, 1500);
+      }}, ["Salin Tautan"]));
+      wrap.appendChild(box);
+      return wrap;
+    }
+
+    var row = el("div", {class:"publish-row"});
+    var canPublish = state.schedule && !state.schedule.error && state.schedule.type !== "knockout";
+    var btn = el("button", {
+      class:"btn btn-primary", type:"button", disabled: state.publishStatus === "saving" || !canPublish,
+      onclick: publishToCloud
+    }, [state.publishStatus === "saving" ? "Menyimpan…" : "Simpan & Bagikan Online"]);
+    row.appendChild(btn);
+    if (state.publishStatus === "saving"){
+      row.appendChild(el("span", {class:"status-text"}, [el("span", {class:"spinner"}), " menyimpan ke server…"]));
+    } else if (state.publishStatus === "error"){
+      row.appendChild(el("span", {class:"status-text", style:"color:var(--danger)"}, [state.publishError]));
+    } else if (!canPublish){
+      row.appendChild(el("span", {class:"status-text"}, ["Format Gugur Langsung belum bisa disimpan online."]));
+    }
+    wrap.appendChild(row);
+    return wrap;
   }
 
   function roundBlock(label, sessions, bye){
@@ -842,6 +931,14 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     if (!state.scores[matchId]) state.scores[matchId] = {};
     state.scores[matchId][side] = value;
     renderAll();
+    if (state.cloud && state.cloud.tournamentId && sb){
+      var sc = state.scores[matchId];
+      var payload = {};
+      payload[side === "a" ? "score_a" : "score_b"] = (sc[side] === "" ? null : parseInt(sc[side], 10));
+      sb.from("matches").update(payload).eq("id", matchId).then(function(res){
+        if (res.error) console.warn("Gagal menyimpan skor ke server:", res.error.message);
+      });
+    }
   }
 
   // ---------- standings ----------
@@ -918,6 +1015,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     var p = el("div", {class:"panel"});
     p.appendChild(el("h2", {}, ["Klasemen"]));
     p.appendChild(el("div", {class:"sub"}, ["Terhitung otomatis dari skor yang sudah diisi di tahap Jadwal. Urutan: menang terbanyak, lalu selisih game."]));
+    p.appendChild(publishSection());
 
     if (!state.schedule) state.schedule = buildSchedule();
     var s = state.schedule;
@@ -954,6 +1052,195 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     return p;
   }
 
+  // ---------- cloud sync (Supabase) ----------
+
+  function groupBy(arr, keyFn){
+    var m = {};
+    arr.forEach(function(x){ var k = keyFn(x); (m[k] = m[k] || []).push(x); });
+    return m;
+  }
+
+  function roundSortKey(label){
+    var m = /r(\d+)$/.exec(label || "");
+    return m ? parseInt(m[1], 10) : 0;
+  }
+
+  function rowsToRounds(rows, teamsById){
+    var byRound = groupBy(rows, function(r){ return r.round_label; });
+    var labels = Object.keys(byRound).sort(function(a, b){ return roundSortKey(a) - roundSortKey(b); });
+    return labels.map(function(rl, i){
+      var matches = byRound[rl].map(function(r){
+        return {court: r.court, a: teamsById[r.team_a_id], b: teamsById[r.team_b_id], id: r.id};
+      }).sort(function(x, y){ return x.court - y.court; });
+      return {label: "Babak " + (i + 1), sessions: [matches], bye: null};
+    });
+  }
+
+  function buildScheduleFromCloud(format, teams, matchesRows){
+    var teamsById = {};
+    teams.forEach(function(t){ teamsById[t.id] = t; });
+    var withTeams = function(r){ return {court: r.court, a: teamsById[r.team_a_id], b: teamsById[r.team_b_id], id: r.id}; };
+
+    if (format === "round_robin"){
+      return {
+        type: "round_robin",
+        rounds: rowsToRounds(matchesRows, teamsById),
+        teams: teams,
+        matches: matchesRows.map(withTeams)
+      };
+    }
+    if (format === "mexicano"){
+      var sessions = [matchesRows.map(withTeams)];
+      return {type: "mexicano", firstRound: {sessions: sessions, bye: null}, teams: teams, matches: flattenMatches(sessions)};
+    }
+    if (format === "groups_knockout"){
+      var byGroup = groupBy(matchesRows, function(r){ return r.group_name || "Grup A"; });
+      var groupNames = Object.keys(byGroup).sort();
+      var groups = groupNames.map(function(gn){
+        var rows = byGroup[gn];
+        var ids = {};
+        rows.forEach(function(r){ ids[r.team_a_id] = 1; ids[r.team_b_id] = 1; });
+        var groupTeams = teams.filter(function(t){ return ids[t.id]; });
+        return {name: gn, teams: groupTeams, rounds: rowsToRounds(rows, teamsById), matches: rows.map(withTeams)};
+      });
+      return {type: "groups_knockout", groups: groups};
+    }
+    return {error: "unsupported"};
+  }
+
+  function setPublishStatus(status, msg){
+    state.publishStatus = status;
+    state.publishError = msg || "";
+    renderAll();
+  }
+
+  function publishToCloud(){
+    if (!sb){
+      setPublishStatus("error", "Koneksi ke server belum siap. Coba muat ulang halaman.");
+      return;
+    }
+    if (!state.schedule) state.schedule = buildSchedule();
+    var s = state.schedule;
+    if (s.error){
+      setPublishStatus("error", "Lengkapi peserta dan buat jadwal terlebih dahulu.");
+      return;
+    }
+    if (s.type === "knockout"){
+      setPublishStatus("error", "Format Gugur Langsung belum didukung untuk disimpan online.");
+      return;
+    }
+
+    setPublishStatus("saving");
+
+    sb.from("tournaments").insert([{
+      name: state.info.name || "Turnamen Padel",
+      event_date: state.info.date || null,
+      location: state.info.location || null,
+      courts: state.info.courts,
+      format: state.format,
+      scoring: state.scoring
+    }]).select().then(function(tRes){
+      if (tRes.error) throw tRes.error;
+      var tournamentId = tRes.data[0].id;
+
+      var pairsPayload = state.participants.map(function(p){
+        return {tournament_id: tournamentId, player1: p.p1, player2: p.p2, category: p.cat};
+      });
+      return sb.from("pairs").insert(pairsPayload).select().then(function(pRes){
+        if (pRes.error) throw pRes.error;
+        var idMap = {};
+        state.participants.forEach(function(p, i){ idMap[p.id] = pRes.data[i].id; });
+
+        var flat = [];
+        if (s.type === "round_robin" || s.type === "mexicano"){
+          s.matches.forEach(function(m){ flat.push({groupName: null, m: m}); });
+        } else if (s.type === "groups_knockout"){
+          s.groups.forEach(function(g){ g.matches.forEach(function(m){ flat.push({groupName: g.name, m: m}); }); });
+        }
+
+        var matchesPayload = flat.map(function(x){
+          var sc = state.scores[x.m.id] || {};
+          var sa = sc.a !== undefined && sc.a !== "" ? parseInt(sc.a, 10) : null;
+          var sb_ = sc.b !== undefined && sc.b !== "" ? parseInt(sc.b, 10) : null;
+          return {
+            tournament_id: tournamentId,
+            group_name: x.groupName,
+            round_label: (x.m.id || "r1").split(":")[0],
+            court: x.m.court,
+            team_a_id: idMap[x.m.a.id],
+            team_b_id: idMap[x.m.b.id],
+            score_a: isNaN(sa) ? null : sa,
+            score_b: isNaN(sb_) ? null : sb_
+          };
+        });
+
+        return sb.from("matches").insert(matchesPayload).select().then(function(mRes){
+          if (mRes.error) throw mRes.error;
+
+          // remap local ids to real uuids so future score edits patch the right rows
+          var newScores = {};
+          mRes.data.forEach(function(row, i){
+            var origMatchId = flat[i].m.id;
+            if (state.scores[origMatchId]) newScores[row.id] = state.scores[origMatchId];
+          });
+          state.scores = newScores;
+          state.participants = state.participants.map(function(p){ return Object.assign({}, p, {id: idMap[p.id]}); });
+          state.schedule = buildScheduleFromCloud(state.format, state.participants, mRes.data);
+          state.cloud = {tournamentId: tournamentId};
+          try { history.replaceState(null, "", "#t=" + tournamentId); } catch(e){}
+          setPublishStatus("done");
+        });
+      });
+    }).catch(function(err){
+      setPublishStatus("error", (err && err.message) ? err.message : "Gagal menyimpan ke server.");
+    });
+  }
+
+  function loadFromCloud(tournamentId){
+    if (!sb){ setPublishStatus("error", "Koneksi ke server belum siap."); return; }
+    setPublishStatus("loading");
+    Promise.all([
+      sb.from("tournaments").select("*").eq("id", tournamentId).single(),
+      sb.from("pairs").select("*").eq("tournament_id", tournamentId).order("created_at"),
+      sb.from("matches").select("*").eq("tournament_id", tournamentId).order("created_at")
+    ]).then(function(results){
+      var tRes = results[0], pRes = results[1], mRes = results[2];
+      if (tRes.error || !tRes.data) throw (tRes.error || new Error("Turnamen tidak ditemukan."));
+      if (pRes.error) throw pRes.error;
+      if (mRes.error) throw mRes.error;
+
+      var t = tRes.data;
+      state.info = {name: t.name, date: t.event_date || "", location: t.location || "", courts: t.courts};
+      state.format = t.format;
+      state.scoring = t.scoring && Object.keys(t.scoring).length ? t.scoring : state.scoring;
+      state.participants = pRes.data.map(function(r){ return {id: r.id, p1: r.player1, p2: r.player2, cat: r.category}; });
+      state.isSample = false;
+
+      state.scores = {};
+      mRes.data.forEach(function(r){
+        if (r.score_a !== null || r.score_b !== null){
+          state.scores[r.id] = {a: r.score_a === null ? "" : String(r.score_a), b: r.score_b === null ? "" : String(r.score_b)};
+        }
+      });
+
+      state.schedule = buildScheduleFromCloud(state.format, state.participants, mRes.data);
+      state.cloud = {tournamentId: tournamentId};
+      state.step = STEPS.length - 1; // Klasemen
+      setPublishStatus("idle");
+    }).catch(function(err){
+      setPublishStatus("error", (err && err.message) ? err.message : "Gagal memuat turnamen dari server.");
+      renderAll();
+    });
+  }
+
+  function copyShareLink(){
+    var url = location.origin + location.pathname + "#t=" + state.cloud.tournamentId;
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).catch(function(){});
+    }
+    return url;
+  }
+
   function resetAll(){
     state.step = 0;
     state.info = {name:"", date:"", location:"", courts: 2};
@@ -964,9 +1251,18 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     state.schedule = null;
     state.isSample = false;
     state.scores = {};
+    state.cloud = null;
+    state.publishStatus = "idle";
+    state.publishError = "";
+    try { history.replaceState(null, "", location.pathname); } catch(e){}
     renderAll();
   }
 
-  renderAll();
+  var hashMatch = /t=([0-9a-fA-F-]{36})/.exec(location.hash || "");
+  if (hashMatch){
+    loadFromCloud(hashMatch[1]);
+  } else {
+    renderAll();
+  }
 })();
 </script>
