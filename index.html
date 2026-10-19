@@ -176,6 +176,43 @@ h1,h2,h3{font-family:"Archivo",system-ui,sans-serif;font-weight:800;letter-spaci
 .note-box{background:var(--surface-2);border-radius:10px;padding:12px 14px;font-size:0.82rem;color:var(--ink-soft);line-height:1.5;margin-bottom:16px}
 .note-box b{color:var(--ink)}
 
+/* score entry inside match cards */
+.score-row{display:flex;align-items:center;gap:7px;font-size:0.85rem;font-weight:600}
+.score-row .team-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.score-row .team-name.lead{color:var(--court)}
+.score-input{
+  width:34px;flex:0 0 auto;text-align:center;padding:5px 2px;border-radius:7px;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink);font-size:0.85rem;font-family:"IBM Plex Mono",monospace;font-weight:600;
+  -moz-appearance:textfield;
+}
+.score-input::-webkit-outer-spin-button,.score-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.score-input:focus-visible{outline:2px solid var(--court);outline-offset:1px}
+.score-sep{color:var(--ink-soft);font-size:0.72rem;flex:0 0 auto}
+.match-card.has-result{border-color:color-mix(in srgb, var(--court) 45%, var(--line))}
+
+/* standings table */
+.standings-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px;margin-bottom:18px}
+.standings-table{width:100%;border-collapse:collapse;min-width:480px;font-size:0.85rem}
+.standings-table th{
+  text-align:left;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink-soft);
+  font-weight:700;padding:10px 12px;background:var(--surface-2);white-space:nowrap;
+}
+.standings-table th.num,.standings-table td.num{text-align:center}
+.standings-table td{padding:10px 12px;border-top:1px solid var(--line);white-space:nowrap;font-variant-numeric:tabular-nums}
+.standings-table td.pair-cell{white-space:normal;font-weight:600}
+.standings-table tr:first-child td{border-top:none}
+.rank-badge{
+  display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;
+  font-family:"IBM Plex Mono",monospace;font-size:0.76rem;font-weight:700;background:var(--surface-2);color:var(--ink-soft);
+}
+.rank-badge.r1{background:var(--ball);color:var(--ball-ink)}
+.rank-badge.r2{background:color-mix(in srgb, var(--court) 28%, var(--surface-2));color:var(--ink)}
+.rank-badge.r3{background:color-mix(in srgb, var(--court) 14%, var(--surface-2));color:var(--ink)}
+.diff-pos{color:var(--court)}
+.diff-neg{color:var(--danger)}
+.group-heading{font-size:1rem;margin:20px 0 9px}
+.group-heading:first-child{margin-top:0}
+
 /* nav */
 .nav-row{display:flex;justify-content:space-between;gap:10px;margin-top:4px}
 .sample-tag{display:inline-block;background:var(--ball);color:var(--ball-ink);font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:middle}
@@ -212,7 +249,8 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     {id:"format", label:"Format"},
     {id:"peserta", label:"Peserta"},
     {id:"skor", label:"Skor"},
-    {id:"jadwal", label:"Jadwal"}
+    {id:"jadwal", label:"Jadwal"},
+    {id:"klasemen", label:"Klasemen"}
   ];
 
   var FORMATS = {
@@ -261,7 +299,8 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
       superTiebreak: false
     },
     schedule: null,
-    isSample: true
+    isSample: true,
+    scores: {}
   };
 
   function nextSunday(){
@@ -331,6 +370,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     if (id === "peserta") host.appendChild(panelPeserta());
     if (id === "skor") host.appendChild(panelSkor());
     if (id === "jadwal") host.appendChild(panelJadwal());
+    if (id === "klasemen") host.appendChild(panelKlasemen());
   }
 
   function navRow(prevLabel, nextLabel, onNext){
@@ -552,8 +592,8 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     return rounds;
   }
 
-  function assignCourts(pairs, courts){
-    // returns array of {court, a, b} dropping/flagging byes, cycling courts, queuing overflow into session groups
+  function assignCourts(pairs, courts, roundLabel){
+    // returns array of {court, a, b, id} dropping/flagging byes, cycling courts, queuing overflow into session groups
     var real = pairs.filter(function(pr){ return pr[0].id !== "bye" && pr[1].id !== "bye"; });
     var byeTeam = null;
     pairs.forEach(function(pr){
@@ -563,12 +603,19 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     var sessions = [];
     for (var i = 0; i < real.length; i += courts){
       var chunk = real.slice(i, i + courts).map(function(pr, idx){
-        return {court: idx+1, a: pr[0], b: pr[1]};
+        var mid = (roundLabel || "r") + ":" + [pr[0].id, pr[1].id].sort().join("-");
+        return {court: idx+1, a: pr[0], b: pr[1], id: mid};
       });
       sessions.push(chunk);
     }
     if (sessions.length === 0) sessions.push([]);
     return {sessions: sessions, bye: byeTeam};
+  }
+
+  function flattenMatches(sessions){
+    var out = [];
+    sessions.forEach(function(s){ s.forEach(function(m){ out.push(m); }); });
+    return out;
   }
 
   function buildKnockout(teams){
@@ -612,13 +659,13 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
 
     if (state.format === "round_robin"){
       var rounds = roundRobinRounds(teams);
-      return {
-        type:"round_robin",
-        rounds: rounds.map(function(pairs, i){
-          var out = assignCourts(pairs, courts);
-          return {label:"Babak " + (i+1), sessions: out.sessions, bye: out.bye};
-        })
-      };
+      var rrRounds = rounds.map(function(pairs, i){
+        var out = assignCourts(pairs, courts, "rr-r" + (i+1));
+        return {label:"Babak " + (i+1), sessions: out.sessions, bye: out.bye};
+      });
+      var rrMatches = [];
+      rrRounds.forEach(function(r){ rrMatches = rrMatches.concat(flattenMatches(r.sessions)); });
+      return {type:"round_robin", rounds: rrRounds, teams: teams, matches: rrMatches};
     }
 
     if (state.format === "knockout"){
@@ -630,13 +677,17 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
       var groups = buildGroups(teams, 4);
       var groupData = groups.map(function(g, gi){
         var rounds2 = roundRobinRounds(g);
+        var gRounds = rounds2.map(function(pairs, i){
+          var out = assignCourts(pairs, courts, "g" + gi + "-r" + (i+1));
+          return {label:"Babak " + (i+1), sessions: out.sessions, bye: out.bye};
+        });
+        var gMatches = [];
+        gRounds.forEach(function(r){ gMatches = gMatches.concat(flattenMatches(r.sessions)); });
         return {
           name: "Grup " + String.fromCharCode(65+gi),
           teams: g,
-          rounds: rounds2.map(function(pairs, i){
-            var out = assignCourts(pairs, courts);
-            return {label:"Babak " + (i+1), sessions: out.sessions, bye: out.bye};
-          })
+          rounds: gRounds,
+          matches: gMatches
         };
       });
       return {type:"groups_knockout", groups: groupData};
@@ -648,8 +699,8 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
       var pairs1 = [];
       for (var i = 0; i < shuffled.length - 1; i += 2) pairs1.push([shuffled[i], shuffled[i+1]]);
       var byeM = shuffled.length % 2 === 1 ? shuffled[shuffled.length-1] : null;
-      var out1 = assignCourts(byeM ? pairs1.concat([[shuffled[shuffled.length-1], {id:"bye",p1:"—",p2:""}]]) : pairs1, courts);
-      return {type:"mexicano", firstRound: out1};
+      var out1 = assignCourts(byeM ? pairs1.concat([[shuffled[shuffled.length-1], {id:"bye",p1:"—",p2:""}]]) : pairs1, courts, "mex-r1");
+      return {type:"mexicano", firstRound: out1, teams: teams, matches: flattenMatches(out1.sessions)};
     }
 
     return {error:"unknown"};
@@ -694,7 +745,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
         ]));
         var grid = el("div", {class:"match-grid"});
         round.pairs.forEach(function(pr){
-          grid.appendChild(matchCard(1, pr[0], pr[1]));
+          grid.appendChild(matchCard({court:1, a:pr[0], b:pr[1], id:null}));
         });
         block.appendChild(grid);
         p.appendChild(block);
@@ -745,7 +796,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
       }
       var grid = el("div", {class:"match-grid"});
       session.forEach(function(m){
-        grid.appendChild(matchCard(m.court, m.a, m.b));
+        grid.appendChild(matchCard(m));
       });
       block.appendChild(grid);
     });
@@ -755,15 +806,152 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     return block;
   }
 
-  function matchCard(court, a, b){
-    return el("div", {class:"match-card"}, [
-      el("div", {class:"court-tag"}, ["Lapangan " + court]),
-      el("div", {class:"vs-line"}, [
+  function matchCard(m){
+    var a = m.a, b = m.b, hasId = !!m.id;
+    var sc = (hasId && state.scores[m.id]) || {};
+    var played = hasId && sc.a !== undefined && sc.a !== "" && sc.b !== undefined && sc.b !== "";
+    var card = el("div", {class:"match-card" + (played ? " has-result" : "")});
+    card.appendChild(el("div", {class:"court-tag"}, ["Lapangan " + m.court]));
+
+    if (!hasId){
+      card.appendChild(el("div", {class:"vs-line"}, [
         el("span", {}, [teamLabel(a)]),
         el("span", {class:"vs"}, ["VS"]),
         el("span", {}, [teamLabel(b)])
+      ]));
+      return card;
+    }
+
+    var row = el("div", {class:"score-row"});
+    row.appendChild(el("span", {class:"team-name"}, [teamLabel(a)]));
+    var inputA = el("input", {class:"score-input", type:"number", min:"0", inputmode:"numeric", placeholder:"-"});
+    if (sc.a !== undefined) inputA.value = sc.a;
+    inputA.addEventListener("change", function(){ setScore(m.id, "a", inputA.value); });
+    row.appendChild(inputA);
+    row.appendChild(el("span", {class:"score-sep"}, [":"]));
+    var inputB = el("input", {class:"score-input", type:"number", min:"0", inputmode:"numeric", placeholder:"-"});
+    if (sc.b !== undefined) inputB.value = sc.b;
+    inputB.addEventListener("change", function(){ setScore(m.id, "b", inputB.value); });
+    row.appendChild(inputB);
+    row.appendChild(el("span", {class:"team-name"}, [teamLabel(b)]));
+    card.appendChild(row);
+    return card;
+  }
+
+  function setScore(matchId, side, value){
+    if (!state.scores[matchId]) state.scores[matchId] = {};
+    state.scores[matchId][side] = value;
+    renderAll();
+  }
+
+  // ---------- standings ----------
+
+  function computeStandings(teams, matches){
+    var table = {};
+    teams.forEach(function(t){
+      if (t.id === "bye") return;
+      table[t.id] = {team:t, played:0, win:0, loss:0, tie:0, gf:0, ga:0};
+    });
+    (matches || []).forEach(function(m){
+      var sc = state.scores[m.id];
+      if (!sc || sc.a === undefined || sc.b === undefined || sc.a === "" || sc.b === "") return;
+      var sa = parseInt(sc.a, 10), sb = parseInt(sc.b, 10);
+      if (isNaN(sa) || isNaN(sb)) return;
+      var ra = table[m.a.id], rb = table[m.b.id];
+      if (!ra || !rb) return;
+      ra.played++; rb.played++;
+      ra.gf += sa; ra.ga += sb;
+      rb.gf += sb; rb.ga += sa;
+      if (sa > sb){ ra.win++; rb.loss++; }
+      else if (sb > sa){ rb.win++; ra.loss++; }
+      else { ra.tie++; rb.tie++; }
+    });
+    var rows = Object.keys(table).map(function(k){ return table[k]; });
+    rows.sort(function(x, y){
+      if (y.win !== x.win) return y.win - x.win;
+      var dx = x.gf - x.ga, dy = y.gf - y.ga;
+      if (dy !== dx) return dy - dx;
+      return y.gf - x.gf;
+    });
+    return rows;
+  }
+
+  function standingsTable(teams, matches){
+    var rows = computeStandings(teams, matches);
+    var wrap = el("div", {class:"standings-wrap"});
+    var table = el("table", {class:"standings-table"});
+    var thead = el("thead", {}, [
+      el("tr", {}, [
+        el("th", {class:"num"}, ["#"]),
+        el("th", {}, ["Pasangan"]),
+        el("th", {class:"num"}, ["Main"]),
+        el("th", {class:"num"}, ["M-K"]),
+        el("th", {class:"num"}, ["Game"]),
+        el("th", {class:"num"}, ["Selisih"])
       ])
     ]);
+    var tbody = el("tbody");
+    rows.forEach(function(r, i){
+      var rankCls = "rank-badge" + (i === 0 ? " r1" : i === 1 ? " r2" : i === 2 ? " r3" : "");
+      var diff = r.gf - r.ga;
+      var diffCls = diff > 0 ? "diff-pos" : diff < 0 ? "diff-neg" : "";
+      var diffText = (diff > 0 ? "+" : "") + diff;
+      tbody.appendChild(el("tr", {}, [
+        el("td", {class:"num"}, [el("span", {class:rankCls}, [String(i+1)])]),
+        el("td", {class:"pair-cell"}, [teamLabel(r.team)]),
+        el("td", {class:"num mono"}, [String(r.played)]),
+        el("td", {class:"num mono"}, [r.win + "-" + r.loss]),
+        el("td", {class:"num mono"}, [r.gf + ":" + r.ga]),
+        el("td", {class:"num mono " + diffCls}, [diffText])
+      ]));
+    });
+    if (rows.length === 0){
+      tbody.appendChild(el("tr", {}, [el("td", {colspan:"6", class:"empty"}, ["Belum ada pasangan."])]));
+    }
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    return wrap;
+  }
+
+  function panelKlasemen(){
+    var p = el("div", {class:"panel"});
+    p.appendChild(el("h2", {}, ["Klasemen"]));
+    p.appendChild(el("div", {class:"sub"}, ["Terhitung otomatis dari skor yang sudah diisi di tahap Jadwal. Urutan: menang terbanyak, lalu selisih game."]));
+
+    if (!state.schedule) state.schedule = buildSchedule();
+    var s = state.schedule;
+
+    if (s.error){
+      p.appendChild(el("div", {class:"empty"}, ["Buat jadwal terlebih dahulu di tahap sebelumnya."]));
+      p.appendChild(navRow("Kembali", "Mulai Baru", function(){ resetAll(); }));
+      return p;
+    }
+
+    if (s.type === "round_robin"){
+      p.appendChild(standingsTable(s.teams, s.matches));
+      p.appendChild(el("div", {class:"note-box"}, [
+        el("b", {}, ["Tips: "]), "isi skor tiap pertandingan di tahap Jadwal — klasemen di sini ikut terupdate otomatis."
+      ]));
+    } else if (s.type === "groups_knockout"){
+      s.groups.forEach(function(g){
+        p.appendChild(el("h3", {class:"group-heading"}, [g.name]));
+        p.appendChild(standingsTable(g.teams, g.matches));
+      });
+    } else if (s.type === "mexicano"){
+      p.appendChild(standingsTable(s.teams, s.matches));
+      p.appendChild(el("div", {class:"note-box"}, [
+        el("b", {}, ["Klasemen sementara. "]), "Baru mencakup babak 1 — babak berikutnya disusun manual di lapangan berdasarkan klasemen ini."
+      ]));
+    } else if (s.type === "knockout"){
+      p.appendChild(el("div", {class:"empty"}, ["Klasemen tidak berlaku untuk format gugur langsung — ikuti bagan di tahap Jadwal."]));
+    }
+
+    var nav = el("div", {class:"nav-row"});
+    nav.appendChild(el("button", {class:"btn btn-ghost", type:"button", onclick:function(){ state.step = 4; renderAll(); }}, ["Kembali ke Jadwal"]));
+    nav.appendChild(el("button", {class:"btn btn-primary", type:"button", onclick:resetAll}, ["Turnamen Baru"]));
+    p.appendChild(nav);
+    return p;
   }
 
   function resetAll(){
@@ -775,6 +963,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     state.scoring = {bestOf:3, gamesPerSet:6, goldenPoint:true, superTiebreak:false};
     state.schedule = null;
     state.isSample = false;
+    state.scores = {};
     renderAll();
   }
 
