@@ -1,3 +1,5 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="claude:viewport-fit-sides" content="cover">
 <title>Rally Draw</title>
 <style>
@@ -243,30 +245,100 @@ h1,h2,h3{font-family:"Archivo",system-ui,sans-serif;font-weight:800;letter-spaci
 
 /* championship bracket diagram */
 .bracket-wrap{overflow-x:auto;margin-bottom:16px;padding-bottom:6px}
-.bracket{min-width:566px}
+.bracket{--bc:190px;--bgap:32px;--bt:122px;min-width:calc(var(--bc)*2 + var(--bgap)*2 + var(--bt))}
 .bracket-heads{display:flex;margin-bottom:8px}
 .bracket-heads .chip{background:var(--court);color:#fff;font-family:"IBM Plex Mono",monospace;font-size:0.72rem;padding:3px 9px;border-radius:999px;font-weight:600}
 .bracket-body{display:flex;align-items:stretch}
-.b-col{flex:0 0 190px}
-.b-gap{flex:0 0 32px}
-.b-trophy{flex:0 0 122px}
+.b-col{flex:0 0 var(--bc)}
+.b-gap{flex:0 0 var(--bgap)}
+.b-trophy{flex:0 0 var(--bt)}
 .b-stack{display:flex;flex-direction:column}
 .b-slot{flex:1;display:flex;align-items:center;padding:7px 0}
 .b-slot > *{width:100%}
-.bracket-conn{flex:0 0 32px;position:relative}
+.bracket-conn{flex:0 0 var(--bgap);position:relative}
 .bracket-conn svg{position:absolute;inset:0;width:100%;height:100%;display:block;overflow:visible}
 .bracket-placeholder{border-style:dashed;color:var(--ink-soft);text-align:left}
 .bracket-placeholder .court-tag::before{background:var(--line)}
 .trophy-card{border:1.5px dashed var(--line);border-radius:10px;padding:12px 10px;text-align:center;color:var(--ink-soft);background:var(--bg)}
 .trophy-card.done{border-style:solid;border-color:var(--ball);background:color-mix(in srgb, var(--ball) 18%, var(--bg));color:var(--ink)}
-.bracket-third{margin-left:222px}
-.bracket-hint{display:none;font-size:0.72rem;color:var(--ink-soft);margin:-8px 0 14px}
-@media(max-width:620px){.bracket-hint{display:block}}
+.bracket-third{margin-left:calc(var(--bc) + var(--bgap))}
+
 
 /* nav */
 .nav-row{display:flex;justify-content:space-between;gap:10px;margin-top:4px}
 .sample-tag{display:inline-block;background:var(--ball);color:var(--ball-ink);font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:middle}
 footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px}
+
+/* ===== responsive ===== */
+/* desktop: wider canvas, roomier type, bigger bracket */
+@media(min-width:900px){
+  body{padding-block:40px 80px}
+  .wrap{max-width:1000px}
+  .brand h1{font-size:1.7rem}
+  .brand-mark{width:36px;height:36px}
+  .brand-mark svg{width:19px;height:19px}
+  .masthead{margin-bottom:28px}
+  .step-btn{padding:11px 18px;font-size:0.92rem}
+  .steps{gap:8px;margin-bottom:24px}
+  .panel{padding:34px 38px}
+  .panel h2{font-size:1.45rem}
+  .panel .sub{font-size:0.95rem;margin-bottom:24px}
+  .field label{font-size:0.85rem}
+  .field input[type=text],.field input[type=date],.field input[type=number],.field select{padding:12px 14px;font-size:1rem}
+  .btn{padding:12px 20px;font-size:0.94rem}
+  .btn-sm{padding:7px 13px;font-size:0.82rem}
+  /* forms stay readable instead of stretching across 1000px */
+  .panel > .field,.panel > .row2,.panel > .add-row,.panel > .toggle-row{max-width:720px}
+  .fmt-grid{grid-template-columns:repeat(3,1fr);gap:14px}
+  .fmt-card{padding:16px}
+  .fmt-card strong{font-size:1rem}
+  .fmt-card span{font-size:0.84rem}
+  .pair-list{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .match-grid{grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+  .match-card{padding:14px 15px}
+  .vs-line{font-size:0.92rem}
+  .standings-table{font-size:0.95rem}
+  .standings-table th,.standings-table td{padding:13px 16px}
+  .bracket{--bc:270px;--bgap:60px;--bt:160px}
+  .share-box .link-field{font-size:0.85rem}
+}
+/* phones */
+@media(max-width:620px){
+  body{padding-block:18px 48px}
+  .brand h1{font-size:1.25rem}
+  .panel{padding:16px 14px;border-radius:12px}
+  .panel h2{font-size:1.08rem}
+  .field input[type=text],.field input[type=date],.field input[type=number],.field select,.mini-add-row input,.add-row input,.add-row select{font-size:16px}
+  .btn{min-height:44px;justify-content:center}
+  .btn-sm{min-height:36px}
+  .step-btn{padding:10px 13px}
+  .nav-row .btn{flex:1}
+  .share-box{padding:12px}
+  .share-box .link-field{flex:1 0 100%}
+  .share-box .btn{flex:1 0 100%}
+  .standings-table{min-width:0;font-size:0.8rem}
+  .standings-table th,.standings-table td{padding:9px 7px}
+  .standings-table th:nth-child(5),.standings-table td:nth-child(5){display:none}
+  .standings-table td.pair-cell{min-width:90px}
+  .score-input{width:48px;padding:9px 2px;font-size:1rem}
+  .pair-item button{padding:10px 8px}
+  .round-title{flex-wrap:wrap}
+  /* bracket: two columns that fit the screen; trophy lives in the podium below */
+  .bracket{--bc:calc((100vw - 64px - 22px) / 2);--bgap:22px;min-width:0}
+  .bracket-heads .b-gap:nth-child(4),.bracket-heads .b-trophy,
+  .bracket-body > :nth-child(4),.bracket-body > :nth-child(5){display:none}
+  .bracket .vs-line{flex-direction:column;gap:2px}
+  .bracket .vs-line .vs{margin:0}
+  .bracket .match-card{padding:9px 9px}
+  .bracket .vs-line{font-size:0.8rem}
+  .bracket .score-view{gap:6px}
+  .bracket .score-num{font-size:1.15rem}
+  .bracket-third{margin-left:calc(var(--bc) + var(--bgap))}
+}
+@media(max-width:380px){
+  .brand span{font-size:0.66rem}
+  .step-btn{font-size:0.78rem;padding:9px 11px}
+}
 </style>
 
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@700;800&family=Work+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap">
@@ -1974,7 +2046,6 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     }
 
     wrap.appendChild(bracketDiagram(cb));
-    wrap.appendChild(el("div", {class:"bracket-hint"}, ["Geser ke samping untuk melihat seluruh bagan →"]));
 
     if (!matchScored(cb.sf[0]) || !matchScored(cb.sf[1])){
       wrap.appendChild(el("div", {class:"note-box"}, ["Isi skor kedua semifinal dulu untuk membuka final dan perebutan juara 3."]));
