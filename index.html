@@ -243,23 +243,25 @@ h1,h2,h3{font-family:"Archivo",system-ui,sans-serif;font-weight:800;letter-spaci
 
 /* championship bracket diagram */
 .bracket-wrap{overflow-x:auto;margin-bottom:16px;padding-bottom:6px}
-.bracket{min-width:660px}
+.bracket{min-width:566px}
 .bracket-heads{display:flex;margin-bottom:8px}
 .bracket-heads .chip{background:var(--court);color:#fff;font-family:"IBM Plex Mono",monospace;font-size:0.72rem;padding:3px 9px;border-radius:999px;font-weight:600}
 .bracket-body{display:flex;align-items:stretch}
-.b-col{flex:0 0 220px}
-.b-gap{flex:0 0 44px}
-.b-trophy{flex:0 0 132px}
+.b-col{flex:0 0 190px}
+.b-gap{flex:0 0 32px}
+.b-trophy{flex:0 0 122px}
 .b-stack{display:flex;flex-direction:column}
 .b-slot{flex:1;display:flex;align-items:center;padding:7px 0}
 .b-slot > *{width:100%}
-.bracket-conn{flex:0 0 44px;position:relative}
+.bracket-conn{flex:0 0 32px;position:relative}
 .bracket-conn svg{position:absolute;inset:0;width:100%;height:100%;display:block;overflow:visible}
 .bracket-placeholder{border-style:dashed;color:var(--ink-soft);text-align:left}
 .bracket-placeholder .court-tag::before{background:var(--line)}
 .trophy-card{border:1.5px dashed var(--line);border-radius:10px;padding:12px 10px;text-align:center;color:var(--ink-soft);background:var(--bg)}
 .trophy-card.done{border-style:solid;border-color:var(--ball);background:color-mix(in srgb, var(--ball) 18%, var(--bg));color:var(--ink)}
-.bracket-third{margin-left:264px}
+.bracket-third{margin-left:222px}
+.bracket-hint{display:none;font-size:0.72rem;color:var(--ink-soft);margin:-8px 0 14px}
+@media(max-width:620px){.bracket-hint{display:block}}
 
 /* nav */
 .nav-row{display:flex;justify-content:space-between;gap:10px;margin-top:4px}
@@ -1972,6 +1974,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     }
 
     wrap.appendChild(bracketDiagram(cb));
+    wrap.appendChild(el("div", {class:"bracket-hint"}, ["Geser ke samping untuk melihat seluruh bagan →"]));
 
     if (!matchScored(cb.sf[0]) || !matchScored(cb.sf[1])){
       wrap.appendChild(el("div", {class:"note-box"}, ["Isi skor kedua semifinal dulu untuk membuka final dan perebutan juara 3."]));
