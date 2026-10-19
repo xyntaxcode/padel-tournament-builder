@@ -916,12 +916,17 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     row.appendChild(el("span", {class:"team-name"}, [teamLabel(a)]));
     var inputA = el("input", {class:"score-input", type:"number", min:"0", inputmode:"numeric", placeholder:"-"});
     if (sc.a !== undefined) inputA.value = sc.a;
-    inputA.addEventListener("change", function(){ setScore(m.id, "a", inputA.value); });
+    function refreshResultClass(){
+      var cur = state.scores[m.id] || {};
+      var done = cur.a !== undefined && cur.a !== "" && cur.b !== undefined && cur.b !== "";
+      card.classList.toggle("has-result", done);
+    }
+    inputA.addEventListener("change", function(){ setScore(m.id, "a", inputA.value); refreshResultClass(); });
     row.appendChild(inputA);
     row.appendChild(el("span", {class:"score-sep"}, [":"]));
     var inputB = el("input", {class:"score-input", type:"number", min:"0", inputmode:"numeric", placeholder:"-"});
     if (sc.b !== undefined) inputB.value = sc.b;
-    inputB.addEventListener("change", function(){ setScore(m.id, "b", inputB.value); });
+    inputB.addEventListener("change", function(){ setScore(m.id, "b", inputB.value); refreshResultClass(); });
     row.appendChild(inputB);
     row.appendChild(el("span", {class:"team-name"}, [teamLabel(b)]));
     card.appendChild(row);
@@ -931,7 +936,11 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
   function setScore(matchId, side, value){
     if (!state.scores[matchId]) state.scores[matchId] = {};
     state.scores[matchId][side] = value;
-    renderAll();
+    // Deliberately no renderAll() here: a full rebuild while the player is
+    // tabbing between the two score fields of a match destroys the DOM node
+    // they just focused, dropping keystrokes. Standings recompute fresh
+    // from state.scores the next time the Klasemen step is rendered, so a
+    // targeted class toggle (see matchCard) is all this needs immediately.
     if (state.cloud && state.cloud.tournamentId && sb){
       var sc = state.scores[matchId];
       var payload = {};
