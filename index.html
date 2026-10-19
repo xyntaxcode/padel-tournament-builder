@@ -378,6 +378,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     schedule: null,
     scores: {},
     editingMatch: null,
+    champBracket: null,
     cloud: null,
     readOnly: false,
     publishStatus: "idle",
@@ -1154,16 +1155,19 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     var nextRound = buildMexicanoRound(s.players, s.rounds.length, state.info.courts, allMatches, false, genderC);
     s.rounds.push(nextRound);
     s.matches = s.matches.concat(flattenMatches(nextRound.sessions));
+    state.champBracket = null;
     renderAll();
+  }
+
+  function matchScored(m){
+    var sc = state.scores[m.id];
+    return !!(sc && sc.a !== undefined && sc.a !== "" && sc.b !== undefined && sc.b !== "");
   }
 
   function roundFullyScored(round){
     var matches = flattenMatches(round.sessions);
     if (matches.length === 0) return false;
-    return matches.every(function(m){
-      var sc = state.scores[m.id];
-      return sc && sc.a !== undefined && sc.a !== "" && sc.b !== undefined && sc.b !== "";
-    });
+    return matches.every(matchScored);
   }
 
   // ---------- step 5: jadwal ----------
@@ -1241,7 +1245,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
         });
       });
       p.appendChild(el("div", {class:"note-box"}, [
-        el("b", {}, ["Fase gugur: "]), "susun manual setelah fase grup selesai, berdasarkan peringkat tiap grup."
+        el("b", {}, ["Fase gugur: "]), "setelah semua pertandingan grup diisi, buka tahap Klasemen untuk membuat bagan juara 1, 2, dan 3 secara otomatis dari peringkat tiap grup."
       ]));
     }
 
@@ -1278,6 +1282,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     var regenBtn = el("button", {class:"btn btn-ball", type:"button", onclick:function(){
       state.schedule = buildSchedule();
       state.editingMatch = null;
+      state.champBracket = null;
       state.cloud = null;
       try { history.replaceState(null, "", location.pathname); } catch(e){}
       renderAll();
@@ -1588,6 +1593,216 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     return wrap;
   }
 
+  // ---------- bagan juara (dibuat dari klasemen) ----------
+
+  function baseStageComplete(s){
+    if (s.type === "round_robin" || s.type === "custom_team" || s.type === "americano"){
+      return s.matches.length > 0 && s.matches.every(matchScored);
+    }
+    if (s.type === "groups_knockout"){
+      var all = [];
+      s.groups.forEach(function(g){ all = all.concat(g.matches); });
+      return all.length > 0 && all.every(matchScored);
+    }
+    if (s.type === "mexicano" || s.type === "mixed_americano"){
+      return roundFullyScored(s.rounds[s.rounds.length - 1]);
+    }
+    return false;
+  }
+
+  function getChampionshipEntities(s){
+    if (s.type === "round_robin" || s.type === "custom_team"){
+      var rows = computeStandings(s.teams, s.matches);
+      if (rows.length < 4) return {error:"Butuh minimal 4 pasangan/tim dengan hasil pertandingan untuk membuat bagan juara."};
+      return {entities: rows.slice(0, 4).map(function(r){ return r.team; })};
+    }
+    if (s.type === "americano" || s.type === "mexicano" || s.type === "mixed_americano"){
+      var irows = computeIndividualStandings(s.players, s.matches);
+      if (irows.length < 8) return {error:"Butuh minimal 8 pemain untuk membentuk 4 pasangan di bagan juara."};
+      var top = irows.slice(0, 8).map(function(r){ return r.player; });
+      return {entities: [
+        pairEntity(top[0], top[7]),
+        pairEntity(top[1], top[6]),
+        pairEntity(top[2], top[5]),
+        pairEntity(top[3], top[4])
+      ]};
+    }
+    if (s.type === "groups_knockout"){
+      var groupRows = s.groups.map(function(g){ return {name: g.name, rows: computeStandings(g.teams, g.matches)}; });
+      var list = [];
+      groupRows.forEach(function(g){ if (g.rows[0]) list.push(g.rows[0].team); });
+      if (list.length < 4){
+        groupRows.forEach(function(g){ if (g.rows[1]) list.push(g.rows[1].team); });
+      }
+      list = list.slice(0, 4);
+      if (list.length < 4) return {error:"Butuh minimal 4 pasangan juara/runner-up grup untuk membuat bagan juara."};
+      return {entities: list};
+    }
+    return {error:"Format ini tidak mendukung bagan juara."};
+  }
+
+  function champSupportsCloud(){
+    return !!(state.cloud && state.cloud.tournamentId && sb && (state.format === "round_robin" || state.format === "groups_knockout"));
+  }
+
+  function buildChampionshipBracket(){
+    if (state.readOnly) return;
+    var s = state.schedule;
+    if (!s) return;
+    var res = getChampionshipEntities(s);
+    if (res.error) return;
+    var entities = res.entities;
+    var cb = {
+      entities: entities,
+      sf: [
+        {court:1, a: entities[0], b: entities[3], id:"champ-sf1"},
+        {court:2, a: entities[1], b: entities[2], id:"champ-sf2"}
+      ],
+      final: null,
+      third: null
+    };
+    state.champBracket = cb;
+    renderAll();
+
+    if (champSupportsCloud()){
+      var payload = cb.sf.map(function(m){
+        return {
+          tournament_id: state.cloud.tournamentId,
+          group_name: null,
+          round_label: m.id,
+          court: m.court,
+          team_a_id: m.a.id,
+          team_b_id: m.b.id,
+          score_a: null,
+          score_b: null
+        };
+      });
+      sb.from("matches").insert(payload).select().then(function(res2){
+        if (res2.error){ console.warn("Gagal menyimpan bagan juara ke server:", res2.error.message); return; }
+        res2.data.forEach(function(row, i){ cb.sf[i].id = row.id; });
+        renderAll();
+      });
+    }
+  }
+
+  function buildChampFinal(){
+    if (state.readOnly) return;
+    var cb = state.champBracket;
+    if (!cb || cb.final) return;
+    if (!matchScored(cb.sf[0]) || !matchScored(cb.sf[1])) return;
+    var sc1 = state.scores[cb.sf[0].id], sc2 = state.scores[cb.sf[1].id];
+    var a1 = parseInt(sc1.a, 10), b1 = parseInt(sc1.b, 10);
+    var a2 = parseInt(sc2.a, 10), b2 = parseInt(sc2.b, 10);
+    var w1 = a1 > b1 ? cb.sf[0].a : cb.sf[0].b, l1 = a1 > b1 ? cb.sf[0].b : cb.sf[0].a;
+    var w2 = a2 > b2 ? cb.sf[1].a : cb.sf[1].b, l2 = a2 > b2 ? cb.sf[1].b : cb.sf[1].a;
+    cb.final = {court:1, a:w1, b:w2, id:"champ-final"};
+    cb.third = {court:2, a:l1, b:l2, id:"champ-3rd"};
+    renderAll();
+
+    if (champSupportsCloud()){
+      var payload = [cb.final, cb.third].map(function(m){
+        return {
+          tournament_id: state.cloud.tournamentId,
+          group_name: null,
+          round_label: m.id,
+          court: m.court,
+          team_a_id: m.a.id,
+          team_b_id: m.b.id,
+          score_a: null,
+          score_b: null
+        };
+      });
+      sb.from("matches").insert(payload).select().then(function(res2){
+        if (res2.error){ console.warn("Gagal menyimpan final/juara 3 ke server:", res2.error.message); return; }
+        cb.final.id = res2.data[0].id;
+        cb.third.id = res2.data[1].id;
+        renderAll();
+      });
+    }
+  }
+
+  function podiumBlock(cb){
+    var fsc = state.scores[cb.final.id], tsc = state.scores[cb.third.id];
+    var fa = parseInt(fsc.a, 10), fb = parseInt(fsc.b, 10);
+    var champion = fa > fb ? cb.final.a : cb.final.b;
+    var runnerUp = fa > fb ? cb.final.b : cb.final.a;
+    var ta = parseInt(tsc.a, 10), tb = parseInt(tsc.b, 10);
+    var third = ta > tb ? cb.third.a : cb.third.b;
+    var box = el("div", {class:"note-box", style:"margin-top:4px"});
+    box.appendChild(el("div", {style:"font-weight:700;margin-bottom:6px;color:var(--ink)"}, ["Hasil akhir"]));
+    box.appendChild(el("div", {style:"margin-bottom:3px"}, ["🥇 Juara 1: ", el("b", {}, [teamLabel(champion)])]));
+    box.appendChild(el("div", {style:"margin-bottom:3px"}, ["🥈 Juara 2: ", el("b", {}, [teamLabel(runnerUp)])]));
+    box.appendChild(el("div", {}, ["🥉 Juara 3: ", el("b", {}, [teamLabel(third)])]));
+    return box;
+  }
+
+  function championshipSection(s){
+    if (s.type === "knockout") return null;
+    var wrap = el("div", {style:"margin-top:8px"});
+    wrap.appendChild(el("h3", {style:"margin:20px 0 9px"}, ["Bagan Juara 1, 2 & 3"]));
+
+    var ready = baseStageComplete(s);
+    var cb = state.champBracket;
+
+    if (!cb){
+      if (!ready){
+        wrap.appendChild(el("div", {class:"note-box"}, ["Selesaikan dulu semua pertandingan di atas untuk membuka bagan juara."]));
+        return wrap;
+      }
+      if (state.readOnly){
+        wrap.appendChild(el("div", {class:"note-box"}, ["Penyelenggara belum membuat bagan juara untuk turnamen ini."]));
+        return wrap;
+      }
+      var res = getChampionshipEntities(s);
+      if (res.error){
+        wrap.appendChild(el("div", {class:"note-box"}, [res.error]));
+        return wrap;
+      }
+      wrap.appendChild(el("div", {class:"sub"}, ["4 peringkat teratas akan bertanding semifinal untuk menentukan juara 1, 2, dan 3."]));
+      wrap.appendChild(el("button", {class:"btn btn-ball", type:"button", onclick: buildChampionshipBracket}, ["Buat Bagan Juara 1-2-3"]));
+      return wrap;
+    }
+
+    var sfGrid = el("div", {class:"match-grid"});
+    cb.sf.forEach(function(m){ sfGrid.appendChild(matchCard(m)); });
+    wrap.appendChild(el("div", {class:"round-block"}, [
+      el("div", {class:"round-title"}, [el("span", {class:"chip"}, ["Semifinal"])]),
+      sfGrid
+    ]));
+
+    if (!matchScored(cb.sf[0]) || !matchScored(cb.sf[1])){
+      wrap.appendChild(el("div", {class:"note-box"}, ["Isi skor kedua semifinal dulu untuk membuka final dan perebutan juara 3."]));
+    } else if (!cb.final){
+      if (!state.readOnly){
+        wrap.appendChild(el("button", {class:"btn btn-ball", type:"button", onclick: buildChampFinal}, ["Buat Final & Perebutan Juara 3"]));
+      } else {
+        wrap.appendChild(el("div", {class:"note-box"}, ["Menunggu penyelenggara membuka babak final."]));
+      }
+    } else {
+      var fGrid = el("div", {class:"match-grid"}, [matchCard(cb.final)]);
+      wrap.appendChild(el("div", {class:"round-block"}, [
+        el("div", {class:"round-title"}, [el("span", {class:"chip"}, ["Final"])]),
+        fGrid
+      ]));
+      var tGrid = el("div", {class:"match-grid"}, [matchCard(cb.third)]);
+      wrap.appendChild(el("div", {class:"round-block"}, [
+        el("div", {class:"round-title"}, [el("span", {class:"chip"}, ["Perebutan Juara 3"])]),
+        tGrid
+      ]));
+      if (matchScored(cb.final) && matchScored(cb.third)){
+        wrap.appendChild(podiumBlock(cb));
+      }
+    }
+
+    if (!state.readOnly && !champSupportsCloud()){
+      wrap.appendChild(el("button", {class:"btn btn-ghost btn-sm", type:"button", style:"margin-top:10px", onclick:function(){
+        state.champBracket = null; renderAll();
+      }}, ["Buat Ulang Bagan Juara"]));
+    }
+
+    return wrap;
+  }
+
   function panelKlasemen(){
     var p = el("div", {class:"panel"});
     p.appendChild(el("h2", {}, ["Klasemen"]));
@@ -1628,6 +1843,9 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     } else if (s.type === "knockout"){
       p.appendChild(el("div", {class:"empty"}, ["Klasemen tidak berlaku untuk format gugur langsung — ikuti bagan di tahap Jadwal."]));
     }
+
+    var champEl = championshipSection(s);
+    if (champEl) p.appendChild(champEl);
 
     var nav = el("div", {class:"nav-row"});
     nav.appendChild(el("button", {class:"btn btn-ghost", type:"button", onclick:function(){ state.step = 4; renderAll(); }}, ["Kembali ke Jadwal"]));
@@ -1786,6 +2004,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
           state.scores = newScores;
           state.participants = state.participants.map(function(p){ return Object.assign({}, p, {id: idMap[p.id]}); });
           state.schedule = buildScheduleFromCloud(state.format, state.participants, mRes.data);
+          state.champBracket = null;
           state.cloud = {tournamentId: tournamentId, editToken: editToken};
           state.readOnly = false;
           saveEditTokenLocally(tournamentId, editToken);
@@ -1826,7 +2045,31 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
         }
       });
 
-      state.schedule = buildScheduleFromCloud(state.format, state.participants, mRes.data);
+      var champRows = mRes.data.filter(function(r){ return typeof r.round_label === "string" && r.round_label.indexOf("champ-") === 0; });
+      var baseRows = mRes.data.filter(function(r){ return !(typeof r.round_label === "string" && r.round_label.indexOf("champ-") === 0); });
+      state.schedule = buildScheduleFromCloud(state.format, state.participants, baseRows);
+
+      var teamsById = {};
+      state.participants.forEach(function(pt){ teamsById[pt.id] = pt; });
+      var findChamp = function(label){
+        var found = champRows.filter(function(r){ return r.round_label === label; });
+        return found[0] || null;
+      };
+      var sf1r = findChamp("champ-sf1"), sf2r = findChamp("champ-sf2");
+      var finalr = findChamp("champ-final"), thirdr = findChamp("champ-3rd");
+      if (sf1r && sf2r){
+        state.champBracket = {
+          entities: [teamsById[sf1r.team_a_id], teamsById[sf1r.team_b_id], teamsById[sf2r.team_a_id], teamsById[sf2r.team_b_id]],
+          sf: [
+            {court: sf1r.court || 1, a: teamsById[sf1r.team_a_id], b: teamsById[sf1r.team_b_id], id: sf1r.id},
+            {court: sf2r.court || 2, a: teamsById[sf2r.team_a_id], b: teamsById[sf2r.team_b_id], id: sf2r.id}
+          ],
+          final: finalr ? {court: finalr.court || 1, a: teamsById[finalr.team_a_id], b: teamsById[finalr.team_b_id], id: finalr.id} : null,
+          third: thirdr ? {court: thirdr.court || 2, a: teamsById[thirdr.team_a_id], b: teamsById[thirdr.team_b_id], id: thirdr.id} : null
+        };
+      } else {
+        state.champBracket = null;
+      }
       // Ownership is decided purely by "do we have a token", never by reading one
       // back from the server — the tournaments row never exposes edit_token to a
       // plain select (see the column-level REVOKE in the DB), and the real check
@@ -1869,6 +2112,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     state.schedule = null;
     state.scores = {};
     state.editingMatch = null;
+    state.champBracket = null;
     state.cloud = null;
     state.readOnly = false;
     state.publishStatus = "idle";
