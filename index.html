@@ -241,6 +241,26 @@ h1,h2,h3{font-family:"Archivo",system-ui,sans-serif;font-weight:800;letter-spaci
 .group-heading{font-size:1rem;margin:20px 0 9px}
 .group-heading:first-child{margin-top:0}
 
+/* championship bracket diagram */
+.bracket-wrap{overflow-x:auto;margin-bottom:16px;padding-bottom:6px}
+.bracket{min-width:660px}
+.bracket-heads{display:flex;margin-bottom:8px}
+.bracket-heads .chip{background:var(--court);color:#fff;font-family:"IBM Plex Mono",monospace;font-size:0.72rem;padding:3px 9px;border-radius:999px;font-weight:600}
+.bracket-body{display:flex;align-items:stretch}
+.b-col{flex:0 0 220px}
+.b-gap{flex:0 0 44px}
+.b-trophy{flex:0 0 132px}
+.b-stack{display:flex;flex-direction:column}
+.b-slot{flex:1;display:flex;align-items:center;padding:7px 0}
+.b-slot > *{width:100%}
+.bracket-conn{flex:0 0 44px;position:relative}
+.bracket-conn svg{position:absolute;inset:0;width:100%;height:100%;display:block;overflow:visible}
+.bracket-placeholder{border-style:dashed;color:var(--ink-soft);text-align:left}
+.bracket-placeholder .court-tag::before{background:var(--line)}
+.trophy-card{border:1.5px dashed var(--line);border-radius:10px;padding:12px 10px;text-align:center;color:var(--ink-soft);background:var(--bg)}
+.trophy-card.done{border-style:solid;border-color:var(--ball);background:color-mix(in srgb, var(--ball) 18%, var(--bg));color:var(--ink)}
+.bracket-third{margin-left:264px}
+
 /* nav */
 .nav-row{display:flex;justify-content:space-between;gap:10px;margin-top:4px}
 .sample-tag{display:inline-block;background:var(--ball);color:var(--ball-ink);font-size:0.66rem;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;padding:2px 8px;border-radius:999px;margin-left:8px;vertical-align:middle}
@@ -1474,7 +1494,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
   function matchCard(m){
     var hasId = !!m.id;
     var card = el("div", {class:"match-card"});
-    card.appendChild(el("div", {class:"court-tag"}, ["Lapangan " + m.court]));
+    card.appendChild(el("div", {class:"court-tag"}, [m.tag || ("Lapangan " + m.court)]));
 
     if (!hasId){
       card.appendChild(namesRow(m));
@@ -1840,6 +1860,90 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     return box;
   }
 
+  function bracketLines(paths){
+    // paths: [[d, isOn], ...] drawn in a stretchable 100x100 box so lines always meet the card centres
+    var svg = '<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">';
+    paths.forEach(function(pt){
+      svg += '<path d="' + pt[0] + '" fill="none" stroke-width="2" vector-effect="non-scaling-stroke" ' +
+        'stroke-linejoin="round" style="stroke:' + (pt[1] ? "var(--court)" : "var(--line)") + '"/>';
+    });
+    svg += "</svg>";
+    return el("div", {class:"bracket-conn", html: svg});
+  }
+
+  function bracketPlaceholder(tag, a, b){
+    return el("div", {class:"match-card bracket-placeholder"}, [
+      el("div", {class:"court-tag"}, [tag]),
+      el("div", {style:"font-size:0.82rem;font-weight:600"}, [a]),
+      el("div", {class:"mono", style:"font-size:0.68rem;margin:2px 0"}, ["VS"]),
+      el("div", {style:"font-size:0.82rem;font-weight:600"}, [b])
+    ]);
+  }
+
+  function winnerOf(m){
+    var sc = state.scores[m.id];
+    var a = parseInt(sc.a, 10), b = parseInt(sc.b, 10);
+    return a > b ? m.a : m.b;
+  }
+
+  function bracketDiagram(cb){
+    var sf1 = cb.sf[0], sf2 = cb.sf[1];
+    var sf1Done = matchScored(sf1), sf2Done = matchScored(sf2);
+    var finalDone = !!(cb.final && matchScored(cb.final));
+
+    var wrap = el("div", {class:"bracket-wrap"});
+    var inner = el("div", {class:"bracket"});
+
+    inner.appendChild(el("div", {class:"bracket-heads"}, [
+      el("div", {class:"b-col"}, [el("span", {class:"chip"}, ["Semifinal"])]),
+      el("div", {class:"b-gap"}),
+      el("div", {class:"b-col"}, [el("span", {class:"chip"}, ["Final"])]),
+      el("div", {class:"b-gap"}),
+      el("div", {class:"b-trophy"}, [el("span", {class:"chip"}, ["Juara"])])
+    ]));
+
+    var col1 = el("div", {class:"b-col b-stack"}, [
+      el("div", {class:"b-slot"}, [matchCard(Object.assign({}, sf1, {tag:"Semifinal 1"}))]),
+      el("div", {class:"b-slot"}, [matchCard(Object.assign({}, sf2, {tag:"Semifinal 2"}))])
+    ]);
+
+    var finalNode = cb.final
+      ? matchCard(Object.assign({}, cb.final, {tag:"Final"}))
+      : bracketPlaceholder("Final", "Pemenang Semifinal 1", "Pemenang Semifinal 2");
+    var col2 = el("div", {class:"b-col b-stack"}, [el("div", {class:"b-slot"}, [finalNode])]);
+
+    var trophy = el("div", {class:"b-trophy b-stack"}, [
+      el("div", {class:"b-slot"}, [
+        el("div", {class:"trophy-card" + (finalDone ? " done" : "")}, [
+          el("div", {style:"font-size:1.6rem;line-height:1"}, ["🏆"]),
+          el("div", {class:"court-tag", style:"justify-content:center;margin:6px 0 3px"}, ["Juara 1"]),
+          el("div", {style:"font-weight:700;font-size:0.85rem"}, [finalDone ? teamLabel(winnerOf(cb.final)) : "—"])
+        ])
+      ])
+    ]);
+
+    inner.appendChild(el("div", {class:"bracket-body"}, [
+      col1,
+      bracketLines([["M0 25 H50 V50", sf1Done], ["M0 75 H50 V50", sf2Done], ["M50 50 H100", !!cb.final]]),
+      col2,
+      bracketLines([["M0 50 H100", finalDone]]),
+      trophy
+    ]));
+
+    var thirdNode = cb.third
+      ? matchCard(Object.assign({}, cb.third, {tag:"Perebutan Juara 3"}))
+      : bracketPlaceholder("Perebutan Juara 3", "Kalah Semifinal 1", "Kalah Semifinal 2");
+    inner.appendChild(el("div", {class:"bracket-third"}, [
+      el("div", {class:"b-col"}, [
+        el("div", {class:"bracket-heads", style:"margin:14px 0 6px"}, [el("span", {class:"chip"}, ["Perebutan Juara 3"])]),
+        thirdNode
+      ])
+    ]));
+
+    wrap.appendChild(inner);
+    return wrap;
+  }
+
   function championshipSection(s){
     if (s.type === "knockout") return null;
     var wrap = el("div", {style:"margin-top:8px"});
@@ -1867,12 +1971,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
       return wrap;
     }
 
-    var sfGrid = el("div", {class:"match-grid"});
-    cb.sf.forEach(function(m){ sfGrid.appendChild(matchCard(m)); });
-    wrap.appendChild(el("div", {class:"round-block"}, [
-      el("div", {class:"round-title"}, [el("span", {class:"chip"}, ["Semifinal"])]),
-      sfGrid
-    ]));
+    wrap.appendChild(bracketDiagram(cb));
 
     if (!matchScored(cb.sf[0]) || !matchScored(cb.sf[1])){
       wrap.appendChild(el("div", {class:"note-box"}, ["Isi skor kedua semifinal dulu untuk membuka final dan perebutan juara 3."]));
@@ -1882,20 +1981,8 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
       } else {
         wrap.appendChild(el("div", {class:"note-box"}, ["Menunggu penyelenggara membuka babak final."]));
       }
-    } else {
-      var fGrid = el("div", {class:"match-grid"}, [matchCard(cb.final)]);
-      wrap.appendChild(el("div", {class:"round-block"}, [
-        el("div", {class:"round-title"}, [el("span", {class:"chip"}, ["Final"])]),
-        fGrid
-      ]));
-      var tGrid = el("div", {class:"match-grid"}, [matchCard(cb.third)]);
-      wrap.appendChild(el("div", {class:"round-block"}, [
-        el("div", {class:"round-title"}, [el("span", {class:"chip"}, ["Perebutan Juara 3"])]),
-        tGrid
-      ]));
-      if (matchScored(cb.final) && matchScored(cb.third)){
-        wrap.appendChild(podiumBlock(cb));
-      }
+    } else if (matchScored(cb.final) && matchScored(cb.third)){
+      wrap.appendChild(podiumBlock(cb));
     }
 
     if (!state.readOnly && !champSupportsCloud()){
