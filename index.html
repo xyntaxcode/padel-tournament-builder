@@ -379,6 +379,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     scores: {},
     editingMatch: null,
     cloud: null,
+    readOnly: false,
     publishStatus: "idle",
     publishError: ""
   };
@@ -435,7 +436,9 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
   function renderSteps(){
     var host = document.getElementById("steps");
     host.innerHTML = "";
-    STEPS.forEach(function(s, i){
+    var visibleSteps = state.readOnly ? STEPS.filter(function(s){ return s.id === "jadwal" || s.id === "klasemen"; }) : STEPS;
+    visibleSteps.forEach(function(s){
+      var i = STEPS.indexOf(s);
       var cls = "step-btn";
       if (i === state.step) cls += " active";
       else if (i < state.step) cls += " done";
@@ -461,7 +464,8 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     if (!host) return;
     host.innerHTML = "";
     if (state.cloud && state.cloud.tournamentId){
-      host.appendChild(el("span", {class:"cloud-badge online"}, [el("span", {class:"dot"}), "Online · tersimpan"]));
+      var label = state.readOnly ? "Online · lihat saja" : "Online · tersimpan";
+      host.appendChild(el("span", {class:"cloud-badge online"}, [el("span", {class:"dot"}), label]));
     } else {
       host.appendChild(el("span", {class:"cloud-badge offline"}, [el("span", {class:"dot"}), "Draf lokal"]));
     }
@@ -1141,6 +1145,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
   }
 
   function generateNextDynamicRound(){
+    if (state.readOnly) return;
     var s = state.schedule;
     if (!s || !s.rounds) return;
     var genderC = !!FORMATS[state.format].mixedGender;
@@ -1249,12 +1254,21 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
         p.appendChild(roundBlock(round.label, round.sessions, round.bye, round.restNote));
       });
       var lastRound = s.rounds[s.rounds.length - 1];
-      if (roundFullyScored(lastRound)){
+      if (state.readOnly){
+        // viewer link: no way to open new rounds, just show what's there
+      } else if (roundFullyScored(lastRound)){
         var genBtn = el("button", {class:"btn btn-ball", type:"button", onclick: generateNextDynamicRound}, ["Buat Babak Berikutnya"]);
         p.appendChild(el("div", {style:"margin-bottom:16px"}, [genBtn]));
       } else {
         p.appendChild(el("div", {class:"note-box"}, ["Isi semua skor di " + lastRound.label + " dulu untuk membuka babak berikutnya."]));
       }
+    }
+
+    if (state.readOnly){
+      p.appendChild(el("div", {class:"note-box"}, [
+        el("b", {}, ["Tautan lihat saja. "]), "Skor dan jadwal di sini hanya untuk dilihat — hubungi penyelenggara turnamen untuk mengubah hasil."
+      ]));
+      return p;
     }
 
     p.appendChild(publishSection());
@@ -1360,10 +1374,24 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
 
     var sc = state.scores[m.id] || {};
     var played = sc.a !== undefined && sc.a !== "" && sc.b !== undefined && sc.b !== "";
-    var editing = state.editingMatch === m.id;
+    var editing = !state.readOnly && state.editingMatch === m.id;
     if (played) card.classList.add("has-result");
 
     card.appendChild(namesRow(m));
+
+    if (state.readOnly){
+      if (played){
+        var sa0 = parseInt(sc.a, 10), sb0 = parseInt(sc.b, 10);
+        var viewRow = el("div", {class:"score-view"});
+        viewRow.appendChild(el("span", {class:"score-num" + (sa0 > sb0 ? " win" : "")}, [String(sa0)]));
+        viewRow.appendChild(el("span", {class:"score-sep"}, ["-"]));
+        viewRow.appendChild(el("span", {class:"score-num" + (sb0 > sa0 ? " win" : "")}, [String(sb0)]));
+        card.appendChild(viewRow);
+      } else {
+        card.appendChild(el("div", {style:"font-size:0.8rem;color:var(--ink-soft)"}, ["Belum ada skor"]));
+      }
+      return card;
+    }
 
     if (played && !editing){
       var sa = parseInt(sc.a, 10), sbv = parseInt(sc.b, 10);
@@ -1399,18 +1427,20 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
   }
 
   function commitScore(matchId, aVal, bVal){
+    if (state.readOnly) return; // defensive: view-only links never show the controls that call this
     var a = (aVal === "" || aVal === undefined) ? "" : String(parseInt(aVal, 10));
     var b = (bVal === "" || bVal === undefined) ? "" : String(parseInt(bVal, 10));
     if (a === "NaN") a = "";
     if (b === "NaN") b = "";
     state.scores[matchId] = {a: a, b: b};
     state.editingMatch = null;
-    if (state.cloud && state.cloud.tournamentId && sb){
-      var payload = {
-        score_a: a === "" ? null : parseInt(a, 10),
-        score_b: b === "" ? null : parseInt(b, 10)
-      };
-      sb.from("matches").update(payload).eq("id", matchId).then(function(res){
+    if (state.cloud && state.cloud.tournamentId && state.cloud.editToken && sb){
+      sb.rpc("update_match_score", {
+        p_match_id: matchId,
+        p_edit_token: state.cloud.editToken,
+        p_score_a: a === "" ? null : parseInt(a, 10),
+        p_score_b: b === "" ? null : parseInt(b, 10)
+      }).then(function(res){
         if (res.error) console.warn("Gagal menyimpan skor ke server:", res.error.message);
       });
     }
@@ -1562,7 +1592,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     var p = el("div", {class:"panel"});
     p.appendChild(el("h2", {}, ["Klasemen"]));
     p.appendChild(el("div", {class:"sub"}, ["Terhitung otomatis dari skor yang sudah diisi di tahap Jadwal. Urutan: menang terbanyak, lalu selisih game."]));
-    p.appendChild(publishSection());
+    if (!state.readOnly) p.appendChild(publishSection());
 
     if (!state.schedule) state.schedule = buildSchedule();
     var s = state.schedule;
@@ -1601,12 +1631,29 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
 
     var nav = el("div", {class:"nav-row"});
     nav.appendChild(el("button", {class:"btn btn-ghost", type:"button", onclick:function(){ state.step = 4; renderAll(); }}, ["Kembali ke Jadwal"]));
-    nav.appendChild(el("button", {class:"btn btn-primary", type:"button", onclick:resetAll}, ["Turnamen Baru"]));
+    if (!state.readOnly){
+      nav.appendChild(el("button", {class:"btn btn-primary", type:"button", onclick:resetAll}, ["Turnamen Baru"]));
+    }
     p.appendChild(nav);
     return p;
   }
 
   // ---------- cloud sync (Supabase) — pair-based formats only for now ----------
+
+  function makeEditToken(){
+    if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID().replace(/-/g, "");
+    var t = "";
+    for (var i = 0; i < 32; i++) t += Math.floor(Math.random() * 16).toString(16);
+    return t;
+  }
+
+  function saveEditTokenLocally(tournamentId, editToken){
+    try { localStorage.setItem("rallydraw_edit_" + tournamentId, editToken); } catch(e){}
+  }
+
+  function loadEditTokenLocally(tournamentId){
+    try { return localStorage.getItem("rallydraw_edit_" + tournamentId); } catch(e){ return null; }
+  }
 
   function groupBy(arr, keyFn){
     var m = {};
@@ -1682,14 +1729,17 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
 
     setPublishStatus("saving");
 
+    var editToken = makeEditToken();
+
     sb.from("tournaments").insert([{
       name: state.info.name || "Turnamen Padel",
       event_date: state.info.date || null,
       location: state.info.location || null,
       courts: state.info.courts,
       format: state.format,
-      scoring: state.scoring
-    }]).select().then(function(tRes){
+      scoring: state.scoring,
+      edit_token: editToken
+    }]).select("id, name, event_date, location, courts, format, scoring, created_at").then(function(tRes){
       if (tRes.error) throw tRes.error;
       var tournamentId = tRes.data[0].id;
 
@@ -1736,8 +1786,10 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
           state.scores = newScores;
           state.participants = state.participants.map(function(p){ return Object.assign({}, p, {id: idMap[p.id]}); });
           state.schedule = buildScheduleFromCloud(state.format, state.participants, mRes.data);
-          state.cloud = {tournamentId: tournamentId};
-          try { history.replaceState(null, "", "#t=" + tournamentId); } catch(e){}
+          state.cloud = {tournamentId: tournamentId, editToken: editToken};
+          state.readOnly = false;
+          saveEditTokenLocally(tournamentId, editToken);
+          try { history.replaceState(null, "", "#t=" + tournamentId + "&k=" + editToken); } catch(e){}
           setPublishStatus("done");
         });
       });
@@ -1746,11 +1798,12 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     });
   }
 
-  function loadFromCloud(tournamentId){
+  function loadFromCloud(tournamentId, editTokenFromHash){
     if (!sb){ setPublishStatus("error", "Koneksi ke server belum siap."); return; }
     setPublishStatus("loading");
+    var editToken = editTokenFromHash || loadEditTokenLocally(tournamentId);
     Promise.all([
-      sb.from("tournaments").select("*").eq("id", tournamentId).single(),
+      sb.from("tournaments").select("id, name, event_date, location, courts, format, scoring, created_at").eq("id", tournamentId).single(),
       sb.from("pairs").select("*").eq("tournament_id", tournamentId).order("created_at"),
       sb.from("matches").select("*").eq("tournament_id", tournamentId).order("created_at")
     ]).then(function(results){
@@ -1774,7 +1827,14 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
       });
 
       state.schedule = buildScheduleFromCloud(state.format, state.participants, mRes.data);
-      state.cloud = {tournamentId: tournamentId};
+      // Ownership is decided purely by "do we have a token", never by reading one
+      // back from the server — the tournaments row never exposes edit_token to a
+      // plain select (see the column-level REVOKE in the DB), and the real check
+      // happens server-side in update_match_score() on every write attempt anyway.
+      var isOwner = !!editToken;
+      state.cloud = {tournamentId: tournamentId, editToken: isOwner ? editToken : null};
+      state.readOnly = !isOwner;
+      if (isOwner) saveEditTokenLocally(tournamentId, editToken);
       state.step = STEPS.length - 1; // Klasemen
       setPublishStatus("idle");
     }).catch(function(err){
@@ -1810,6 +1870,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     state.scores = {};
     state.editingMatch = null;
     state.cloud = null;
+    state.readOnly = false;
     state.publishStatus = "idle";
     state.publishError = "";
     try { history.replaceState(null, "", location.pathname); } catch(e){}
@@ -1818,7 +1879,8 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
 
   var hashMatch = /t=([0-9a-fA-F-]{36})/.exec(location.hash || "");
   if (hashMatch){
-    loadFromCloud(hashMatch[1]);
+    var keyMatch = /[&#]k=([0-9a-fA-F]{32})/.exec(location.hash || "");
+    loadFromCloud(hashMatch[1], keyMatch ? keyMatch[1] : null);
   } else {
     renderAll();
   }
