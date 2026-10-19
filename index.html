@@ -324,7 +324,8 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
   .pair-item button{padding:10px 8px}
   .round-title{flex-wrap:wrap}
   /* bracket: two columns that fit the screen; trophy lives in the podium below */
-  .bracket{--bc:calc((100vw - 64px - 22px) / 2);--bgap:22px;min-width:0}
+  .bracket{--bgap:22px;min-width:0}
+  .bracket .bracket-heads > .b-col,.bracket .bracket-body > .b-col{flex:1 1 0;min-width:0}
   .bracket-heads .b-gap:nth-child(4),.bracket-heads .b-trophy,
   .bracket-body > :nth-child(4),.bracket-body > :nth-child(5){display:none}
   .bracket .vs-line{flex-direction:column;gap:2px}
@@ -333,7 +334,8 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
   .bracket .vs-line{font-size:0.8rem}
   .bracket .score-view{gap:6px}
   .bracket .score-num{font-size:1.15rem}
-  .bracket-third{margin-left:calc(var(--bc) + var(--bgap))}
+  .bracket-third{margin-left:calc((100% - var(--bgap)) / 2 + var(--bgap))}
+  .bracket-third .b-col{flex:none;width:auto}
 }
 @media(max-width:380px){
   .brand span{font-size:0.66rem}
