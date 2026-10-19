@@ -325,6 +325,9 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
   var CATS = ["Terbuka", "Pemula", "Menengah", "Lanjutan"];
 
   var state = {
+    view: "landing", // "landing" | "app" — landing page shows token entry + "buat baru" before anything else
+    landingStatus: "idle", // idle | loading | error
+    landingError: "",
     step: 0,
     info: {
       name: "Turnamen Komunitas Minggu Pagi",
@@ -473,6 +476,15 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
   }
 
   function renderAll(){
+    if (state.view === "landing"){
+      document.getElementById("steps").innerHTML = "";
+      document.getElementById("cloud-status").innerHTML = "";
+      var landingHost = document.getElementById("panel-host");
+      landingHost.innerHTML = "";
+      landingHost.appendChild(panelLanding());
+      return;
+    }
+
     renderSteps();
     renderCloudBadge();
     var host = document.getElementById("panel-host");
@@ -514,6 +526,88 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     row.appendChild(prevBtn);
     row.appendChild(nextBtn);
     return row;
+  }
+
+  // ---------- landing: token entry / buat baru ----------
+
+  function openByToken(raw){
+    var code = (raw || "").trim().toUpperCase();
+    if (!code){
+      state.landingStatus = "error";
+      state.landingError = "Masukkan token turnamen terlebih dahulu.";
+      renderAll();
+      return;
+    }
+    if (!sb){
+      state.landingStatus = "error";
+      state.landingError = "Koneksi ke server belum siap. Coba muat ulang halaman.";
+      renderAll();
+      return;
+    }
+    state.landingStatus = "loading";
+    state.landingError = "";
+    renderAll();
+    sb.from("tournaments").select("id").eq("short_code", code).maybeSingle().then(function(res){
+      if (res.error || !res.data){
+        state.landingStatus = "error";
+        state.landingError = "Token \"" + code + "\" tidak ditemukan. Periksa kembali token yang diberikan penyelenggara.";
+        renderAll();
+        return;
+      }
+      state.view = "app";
+      state.landingStatus = "idle";
+      try { history.replaceState(null, "", "#t=" + res.data.id); } catch(e){}
+      loadFromCloud(res.data.id, null);
+    }).catch(function(){
+      state.landingStatus = "error";
+      state.landingError = "Gagal menghubungi server. Coba lagi.";
+      renderAll();
+    });
+  }
+
+  function panelLanding(){
+    var p = el("div", {class:"panel"});
+    p.appendChild(el("h2", {}, ["Buka atau buat turnamen"]));
+    p.appendChild(el("div", {class:"sub"}, ["Punya token dari turnamen yang sudah dibuat sebelumnya? Masukkan di sini. Atau mulai turnamen baru."]));
+
+    var field1 = el("div", {class:"field"});
+    field1.appendChild(el("label", {}, ["Token turnamen"]));
+    var tokenInput = el("input", {
+      type:"text", placeholder:"Contoh: 7K2XQD", maxlength:"12",
+      style:"text-transform:uppercase;letter-spacing:0.06em;font-family:'IBM Plex Mono',monospace"
+    });
+    tokenInput.addEventListener("keydown", function(e){
+      if (e.key === "Enter"){ e.preventDefault(); openByToken(tokenInput.value); }
+    });
+    field1.appendChild(tokenInput);
+    p.appendChild(field1);
+
+    var loading = state.landingStatus === "loading";
+    var openBtn = el("button", {
+      class:"btn btn-primary", type:"button", disabled: loading,
+      style:"width:100%;justify-content:center;margin-bottom:12px",
+      onclick:function(){ openByToken(tokenInput.value); }
+    }, [loading ? "Membuka…" : "Buka Turnamen"]);
+    p.appendChild(openBtn);
+
+    if (state.landingStatus === "error"){
+      p.appendChild(el("div", {class:"note-box", style:"color:var(--danger)"}, [state.landingError]));
+    }
+
+    p.appendChild(el("div", {style:"text-align:center;color:var(--ink-soft);font-size:0.78rem;margin:16px 0"}, ["— atau —"]));
+
+    var newBtn = el("button", {
+      class:"btn btn-ball", type:"button", style:"width:100%;justify-content:center",
+      onclick:function(){
+        state.view = "app";
+        state.landingStatus = "idle";
+        state.landingError = "";
+        renderAll();
+      }
+    }, ["+ Buat Turnamen Baru"]);
+    p.appendChild(newBtn);
+
+    return p;
   }
 
   // ---------- step 1: info ----------
@@ -1310,6 +1404,16 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
         setTimeout(function(){ btn.textContent = "Salin Tautan"; }, 1500);
       }}, ["Salin Tautan"]));
       wrap.appendChild(box);
+
+      if (state.cloud.shortCode && !state.readOnly){
+        wrap.appendChild(el("div", {class:"note-box", style:"display:flex;align-items:center;gap:10px;flex-wrap:wrap"}, [
+          el("div", {style:"flex:1;min-width:160px"}, [
+            el("b", {}, ["Token turnamen: "]),
+            el("span", {class:"mono", style:"font-size:1rem;letter-spacing:0.08em"}, [state.cloud.shortCode]),
+            el("div", {style:"margin-top:3px"}, ["Ingat token ini untuk membuka kembali turnamen ini dari halaman depan di device mana pun, tanpa perlu tautan lengkap."])
+          ])
+        ]));
+      }
       return wrap;
     }
 
@@ -1858,6 +1962,27 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
 
   // ---------- cloud sync (Supabase) — pair-based formats only for now ----------
 
+  function makeShortCode(){
+    var alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O/1/I/L — easy to read aloud
+    var code = "";
+    for (var i = 0; i < 6; i++) code += alphabet[Math.floor(Math.random() * alphabet.length)];
+    return code;
+  }
+
+  function insertTournamentWithCode(baseFields, attempt){
+    attempt = attempt || 0;
+    var payload = Object.assign({}, baseFields, {short_code: makeShortCode()});
+    return sb.from("tournaments").insert([payload])
+      .select("id, name, event_date, location, courts, format, scoring, created_at, short_code")
+      .then(function(res){
+        if (res.error){
+          if (res.error.code === "23505" && attempt < 4) return insertTournamentWithCode(baseFields, attempt + 1);
+          throw res.error;
+        }
+        return res;
+      });
+  }
+
   function makeEditToken(){
     if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID().replace(/-/g, "");
     var t = "";
@@ -1949,7 +2074,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
 
     var editToken = makeEditToken();
 
-    sb.from("tournaments").insert([{
+    insertTournamentWithCode({
       name: state.info.name || "Turnamen Padel",
       event_date: state.info.date || null,
       location: state.info.location || null,
@@ -1957,9 +2082,10 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
       format: state.format,
       scoring: state.scoring,
       edit_token: editToken
-    }]).select("id, name, event_date, location, courts, format, scoring, created_at").then(function(tRes){
+    }).then(function(tRes){
       if (tRes.error) throw tRes.error;
       var tournamentId = tRes.data[0].id;
+      var shortCode = tRes.data[0].short_code;
 
       var pairsPayload = state.participants.map(function(p){
         return {tournament_id: tournamentId, player1: p.p1, player2: p.p2, category: p.cat};
@@ -2005,7 +2131,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
           state.participants = state.participants.map(function(p){ return Object.assign({}, p, {id: idMap[p.id]}); });
           state.schedule = buildScheduleFromCloud(state.format, state.participants, mRes.data);
           state.champBracket = null;
-          state.cloud = {tournamentId: tournamentId, editToken: editToken};
+          state.cloud = {tournamentId: tournamentId, editToken: editToken, shortCode: shortCode};
           state.readOnly = false;
           saveEditTokenLocally(tournamentId, editToken);
           try { history.replaceState(null, "", "#t=" + tournamentId + "&k=" + editToken); } catch(e){}
@@ -2022,7 +2148,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
     setPublishStatus("loading");
     var editToken = editTokenFromHash || loadEditTokenLocally(tournamentId);
     Promise.all([
-      sb.from("tournaments").select("id, name, event_date, location, courts, format, scoring, created_at").eq("id", tournamentId).single(),
+      sb.from("tournaments").select("id, name, event_date, location, courts, format, scoring, created_at, short_code").eq("id", tournamentId).single(),
       sb.from("pairs").select("*").eq("tournament_id", tournamentId).order("created_at"),
       sb.from("matches").select("*").eq("tournament_id", tournamentId).order("created_at")
     ]).then(function(results){
@@ -2075,7 +2201,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
       // plain select (see the column-level REVOKE in the DB), and the real check
       // happens server-side in update_match_score() on every write attempt anyway.
       var isOwner = !!editToken;
-      state.cloud = {tournamentId: tournamentId, editToken: isOwner ? editToken : null};
+      state.cloud = {tournamentId: tournamentId, editToken: isOwner ? editToken : null, shortCode: t.short_code || null};
       state.readOnly = !isOwner;
       if (isOwner) saveEditTokenLocally(tournamentId, editToken);
       state.step = STEPS.length - 1; // Klasemen
@@ -2095,6 +2221,9 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
   }
 
   function resetAll(){
+    state.view = "app";
+    state.landingStatus = "idle";
+    state.landingError = "";
     state.step = 0;
     state.info = {name:"", date:"", location:"", courts: 2};
     state.format = "round_robin";
@@ -2123,6 +2252,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
 
   var hashMatch = /t=([0-9a-fA-F-]{36})/.exec(location.hash || "");
   if (hashMatch){
+    state.view = "app";
     var keyMatch = /[&#]k=([0-9a-fA-F]{32})/.exec(location.hash || "");
     loadFromCloud(hashMatch[1], keyMatch ? keyMatch[1] : null);
   } else {
