@@ -342,6 +342,7 @@ footer{text-align:center;font-size:0.72rem;color:var(--ink-soft);margin-top:30px
       if (k === "class") node.className = attrs[k];
       else if (k === "html") node.innerHTML = attrs[k];
       else if (k.indexOf("on") === 0 && typeof attrs[k] === "function") node.addEventListener(k.slice(2), attrs[k]);
+      else if (typeof attrs[k] === "boolean") { if (attrs[k]) node.setAttribute(k, ""); }
       else node.setAttribute(k, attrs[k]);
     }
     (children || []).forEach(function(c){
